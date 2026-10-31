@@ -102,6 +102,28 @@ Hashing and code-signature checks use one thread per CPU core by default (`--thr
 | Function | from the copy: the xLua editor suite 48/48, an Android IL2CPP APK, an iOS export |
 | Start time | batch open and quit of one project: 7.5 and 5.0 s original, 4.5 and 4.3 s compressed |
 
+### Rollout on the T7 (2026-10-31)
+
+Each tree went through `copy`, `swap` and a functional check, then `finish` after the owner approved it. Free space on the T7 was 83 GiB with the originals kept beside the copies, and 182 GiB after `finish`.
+
+| Tree | Allocated before → after | Saved | Functional check |
+|---|---|---|---|
+| Unity 6000.3.27f2 | 17.11 → 8.71 GiB | 8.40 GiB | `-createProject` in batch mode |
+| Unity 6000.6.7f1 | 24.34 → 11.63 GiB | 12.72 GiB | same |
+| Unity 2021.3.45f2 | 16.03 → 8.57 GiB | 7.47 GiB | same |
+| Unity 2022.3.62f3 | 18.13 → 9.68 GiB | 8.45 GiB | same |
+| Unity 6000.0.85f1 | 8.74 → 5.61 GiB | 3.13 GiB | same |
+| Unity `Shared/Android-6000` (SDK, NDK, OpenJDK) | 3.64 → 1.74 GiB | 1.90 GiB | `java -version`, NDK clang builds an arm64 binary, `aapt2 version` |
+| Android NDK r30 | 2.80 → 1.08 GiB | 1.73 GiB | NDK clang builds an arm64 binary |
+| Android emulator | 1.22 → 0.44 GiB | 0.78 GiB | `emulator -version` |
+| OpenHarmony SDK 7.0 | 6.82 → 5.22 GiB | 1.60 GiB | none: the checks above only (Linux binaries) |
+| **Total** | | **46.2 GiB** | |
+
+- **Android system images** (4.25 GiB) would have saved 0.08 GiB: the disk images inside are already compressed. That copy was rolled back and discarded.
+- **Left alone:** `platform-tools` (the shared adb server runs from it) and the AVD home (written while an emulator runs).
+- **Time per tree,** for 2022.3.62f3 with 129,000 files: `ditto` 199 s, verification 75 s, signatures 129 s.
+- **Restores that were needed:** 6 empty `com.apple.cs.CodeSignature` attributes in 2022.3.62f3, and 5 AppleDouble files in the NDK and the emulator. Each failed verification first, which is how they were found.
+
 Unity 2021.3.45f2, installed by Unity Hub, first failed the check on 146,007 `com.apple.provenance` values and on nothing else. A copy run from its compressed tree created a project and quit cleanly, which led to the rule above. Its `Unity.app` also fails `codesign --deep` in the original ("invalid destination for symbolic link in bundle"), and fails the same way in the copy.
 
 Gatekeeper (`spctl`) rejects both the original and the copy of 6000.3.27f2 as "Unnotarized Developer ID". The cause is Unity's notarization of that release, not the compression; 6000.6.7f1 is accepted. The editor runs, because the files carry no quarantine attribute.
