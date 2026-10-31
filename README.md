@@ -75,7 +75,10 @@ uv run python -m unittest discover -s tests -v
   - logical and allocated size;
   - the free space the copy consumed.
 
-Before verifying, `copy` writes back the zero-length extended attributes that `ditto` leaves out, with or without compression (`cp -p` keeps them). Unity 2022.3.62f3 has six iOS simulator static libraries whose `com.apple.cs.CodeSignature` is empty. They verify either way, but the metadata would differ.
+Before verifying, `copy` puts back what `ditto` leaves out:
+
+- **AppleDouble files (`._name`):** `ditto` treats them as metadata of `name` and does not copy them, with or without a `name` beside them. Tarballs packed on macOS and unpacked elsewhere leave them behind; the Android NDK r30 and emulator in `android-sdk` have five. `copy` copies them with `cp -p`, byte for byte.
+- **Zero-length extended attributes:** `copy` writes back the ones that `ditto` leaves out, with or without compression (`cp -p` keeps them). Unity 2022.3.62f3 has six iOS simulator static libraries whose `com.apple.cs.CodeSignature` is empty. They verify either way, but the metadata would differ.
 
 Known differences are reported but not failed:
 

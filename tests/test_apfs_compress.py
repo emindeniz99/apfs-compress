@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -74,6 +75,15 @@ class ApfsCompressTest(unittest.TestCase):
         _, signable = codesign.find(str(self.src))
         self.assertIn(os.path.join("sub", "empty-attr.a"), signable)
         self.assertEqual(data["codesign"]["different"], [])
+
+    def test_appledouble_files_survive(self) -> None:
+        header = struct.pack(">II16sH", 0x00051607, 0x00020000, b"Mac OS X        ", 0)
+        (self.src / "._text.txt").write_bytes(header)  # beside its file
+        (self.src / "sub" / "._orphan").write_bytes(header)  # no file of that name
+        data = self.copy_ok()
+        self.assertEqual(data["appledouble_files_restored"], 2)
+        self.assertEqual((self.copy / "._text.txt").read_bytes(), header)
+        self.assertTrue((self.copy / "sub" / "._orphan").exists())
 
     def test_hard_links(self) -> None:
         os.link(self.src / "text.txt", self.src / "sub" / "text-link.txt")

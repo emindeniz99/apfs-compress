@@ -18,6 +18,7 @@ import hashlib
 import os
 import stat
 import struct
+import subprocess
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -121,6 +122,25 @@ def restore_empty_xattrs(original: str, copy: str) -> int:
                 if _libc.setxattr(pb.encode(), name.encode(), None, 0, 0, XATTR_NOFOLLOW) != 0:
                     raise OSError(ctypes.get_errno(), f"setxattr {name} on {pb}")
                 restored += 1
+    return restored
+
+
+def restore_appledouble(original: str, copy: str) -> int:
+    """Copy into the copy the AppleDouble files (`._name`) that ditto leaves out.
+
+    ditto treats a `._name` file as metadata of `name` and does not copy it, whether or not
+    `name` exists. Tarballs made on macOS and unpacked elsewhere leave such files behind (the
+    Android NDK and emulator have a few). `cp -p` copies them byte for byte with their
+    metadata. Returns how many it copied.
+    """
+    restored = 0
+    for rel, s in walk(original).items():
+        name = os.path.basename(rel)
+        pb = os.path.join(copy, rel)
+        missing = name.startswith("._") and stat.S_ISREG(s.st_mode) and not os.path.lexists(pb)
+        if missing and os.path.isdir(os.path.dirname(pb)):
+            subprocess.run(["cp", "-p", os.path.join(original, rel), pb], check=True)
+            restored += 1
     return restored
 
 

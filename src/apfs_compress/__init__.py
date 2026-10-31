@@ -118,8 +118,12 @@ def cmd_copy(args: argparse.Namespace) -> int:
     free_before, t0 = free_bytes(src.parent), time.time()
     subprocess.run(["ditto", "--noclone", "--hfsCompression", str(src), str(copy)], check=True)
     elapsed, free_after = time.time() - t0, free_bytes(src.parent)
+    appledouble = verify.restore_appledouble(str(src), str(copy))
     restored = verify.restore_empty_xattrs(str(src), str(copy))
-    log(f"restored {restored} empty extended attributes that ditto leaves out")
+    log(
+        f"restored {appledouble} AppleDouble files and {restored} empty extended attributes "
+        "that ditto leaves out"
+    )
     log(
         f"copied in {elapsed:.1f} s; the copy took {(free_before - free_after) / 2**30:.2f} GiB of free space"
     )
@@ -145,6 +149,7 @@ def cmd_copy(args: argparse.Namespace) -> int:
         "elapsed_s": round(elapsed, 1),
         "phases": phases,
         "empty_xattrs_restored": restored,
+        "appledouble_files_restored": appledouble,
         "threads": args.threads,
         "free_space_used_by_copy": free_before - free_after,
         "original_stats": asdict(before),
