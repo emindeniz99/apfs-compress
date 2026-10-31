@@ -1,0 +1,279 @@
+"""apfs-compress: APFS transparent compression of a read-mostly tree, through a verified copy.
+
+`copy` makes a compressed copy next to the original with Apple's own `ditto --noclone
+--hfsCompression`, then checks every file's content, metadata and code signature against the
+original and writes a report. The original is not touched. `swap` exchanges the two directory
+names, but only after a passing report; `rollback` exchanges them back; `finish` deletes the
+original, and only when told to. The copy sits beside the original, at the same depth, so
+relative symlinks that leave the tree keep resolving. Python 3.9+, standard library only, macOS.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import plistlib
+import shutil
+import subprocess
+import sys
+import time
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from . import codesign, verify
+
+COPY_PREFIX = ".apfscmp-"
+ORIG_PREFIX = ".apfscmp-orig-"
+
+
+class Usage(Exception):
+    """A precondition failed: nothing was changed."""
+
+
+def paths(src: str) -> tuple[Path, Path, Path, Path]:
+    s = Path(os.path.abspath(src))
+    parent, name = s.parent, s.name
+    return (
+        s,
+        parent / f"{COPY_PREFIX}{name}",
+        parent / f"{ORIG_PREFIX}{name}",
+        parent / f"{COPY_PREFIX}{name}.json",
+    )
+
+
+def log(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def free_bytes(path: Path) -> int:
+    st = os.statvfs(path)
+    return st.f_bavail * st.f_frsize
+
+
+def filesystem(path: Path) -> str:
+    """The filesystem type of the volume holding path ("apfs", "hfs", ...)."""
+    df = subprocess.run(["df", "-P", str(path)], capture_output=True, text=True, check=False)
+    lines = df.stdout.splitlines()
+    if df.returncode != 0 or len(lines) < 2:
+        return "unknown"
+    mount_point = lines[-1].split(None, 5)[-1]  # df -P: the mount point is the sixth column
+    r = subprocess.run(["diskutil", "info", "-plist", mount_point], capture_output=True, check=False)
+    if r.returncode != 0:
+        return "unknown"
+    return str(plistlib.loads(r.stdout).get("FilesystemType", "unknown"))
+
+
+def users_of(path: Path) -> list[str]:
+    """Processes whose command line names the tree (a cheap check; lsof +D is too slow)."""
+    r = subprocess.run(["pgrep", "-fl", str(path)], capture_output=True, text=True, check=False)
+    me = {str(os.getpid()), str(os.getppid())}
+    return [line for line in r.stdout.splitlines() if line.split(" ", 1)[0] not in me]
+
+
+def macos_version() -> str:
+    r = subprocess.run(["sw_vers", "-productVersion"], capture_output=True, text=True, check=False)
+    return r.stdout.strip()
+
+
+def read_report(report: Path) -> dict[str, Any]:
+    if not report.exists():
+        raise Usage(f"no report at {report}; run `copy` first")
+    return json.loads(report.read_text())
+
+
+def write_report(report: Path, data: dict[str, Any]) -> None:
+    tmp = report.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.replace(report)
+
+
+def cmd_copy(args: argparse.Namespace) -> int:
+    src, copy, orig, report = paths(args.src)
+    if not src.is_dir() or src.is_symlink():
+        raise Usage(f"{src} is not a directory")
+    for p in (copy, orig, report):
+        if p.exists():
+            raise Usage(f"{p} already exists (`discard`, `rollback` or `finish` first)")
+    fs = filesystem(src)
+    if fs != "apfs":
+        raise Usage(f"{src} is on {fs}, not APFS")
+    users = users_of(src)
+    if users and not args.force:
+        raise Usage("processes use the tree (close them, or pass --force):\n  " + "\n  ".join(users))
+    before = verify.tree_stats(str(src))
+    if free_bytes(src.parent) < before.allocated * 1.05 + (2 << 30):
+        raise Usage(f"not enough free space for a full copy ({before.allocated / 2**30:.1f} GiB)")
+
+    log(f"ditto --noclone --hfsCompression {src} {copy}")
+    free_before, t0 = free_bytes(src.parent), time.time()
+    subprocess.run(["ditto", "--noclone", "--hfsCompression", str(src), str(copy)], check=True)
+    elapsed, free_after = time.time() - t0, free_bytes(src.parent)
+    log(
+        f"copied in {elapsed:.1f} s; the copy took {(free_before - free_after) / 2**30:.2f} GiB of free space"
+    )
+
+    v = verify.compare(str(src), str(copy), log=log, threads=args.threads)
+    c = codesign.compare(str(src), str(copy), log=log, threads=args.threads)
+    after = verify.tree_stats(str(copy))
+    passed = v.passed and c.passed
+    data = {
+        "result": "PASS" if passed else "FAIL",
+        "state": "copied",
+        "original": str(src),
+        "copy": str(copy),
+        "macos": macos_version(),
+        "command": "ditto --noclone --hfsCompression",
+        "elapsed_s": round(elapsed, 1),
+        "free_space_used_by_copy": free_before - free_after,
+        "original_stats": asdict(before),
+        "copy_stats": asdict(after),
+        "verify": {
+            "entries": v.entries,
+            "files": v.files,
+            "mismatches": v.mismatches,
+            "symlink_mtimes_not_kept": v.symlink_mtimes,
+        },
+        "codesign": asdict(c),
+        "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    write_report(report, data)
+    ratio = after.allocated / before.allocated if before.allocated else 1
+    log(f"types in the copy: {after.types}")
+    log(
+        f"allocated {before.allocated / 2**30:.2f} GiB -> {after.allocated / 2**30:.2f} GiB ({ratio:.3f}), "
+        f"saves {(before.allocated - after.allocated) / 2**30:.2f} GiB"
+    )
+    log(f"{data['result']}: report {report}")
+    if not passed:
+        log(f"the original is untouched; inspect {copy}, then `apfs-compress discard {src}`")
+    return 0 if passed else 1
+
+
+def cmd_swap(args: argparse.Namespace) -> int:
+    src, copy, orig, report = paths(args.src)
+    data = read_report(report)
+    if data.get("result") != "PASS" or data.get("state") != "copied":
+        raise Usage(f"report is {data.get('result')}/{data.get('state')}, not PASS/copied")
+    if not copy.is_dir() or orig.exists():
+        raise Usage(f"need {copy} and no {orig}")
+    if len(verify.walk(str(copy))) != data["verify"]["entries"]:
+        raise Usage("the copy changed since it was verified; `discard` it and run `copy` again")
+    users = users_of(src)
+    if users and not args.force:
+        raise Usage("processes use the tree (close them, or pass --force):\n  " + "\n  ".join(users))
+    src.rename(orig)
+    copy.rename(src)
+    data["state"] = "swapped"
+    write_report(report, data)
+    log(f"{src} is now the compressed copy; the original is at {orig}")
+    log(f"test it, then `apfs-compress finish {src} --yes`, or `apfs-compress rollback {src}`")
+    return 0
+
+
+def cmd_rollback(args: argparse.Namespace) -> int:
+    src, copy, orig, report = paths(args.src)
+    if not orig.is_dir() or copy.exists():
+        raise Usage(f"need {orig} and no {copy}")
+    src.rename(copy)
+    orig.rename(src)
+    if report.exists():
+        data = read_report(report)
+        data["state"] = "copied"
+        write_report(report, data)
+    log(f"{src} is the original again; the compressed copy is at {copy}")
+    return 0
+
+
+def cmd_finish(args: argparse.Namespace) -> int:
+    src, _, orig, report = paths(args.src)
+    data = read_report(report)
+    if data.get("state") != "swapped" or not orig.is_dir():
+        raise Usage(f"report state is {data.get('state')}; nothing to finish")
+    if not args.yes:
+        raise Usage(f"this deletes {orig}; pass --yes")
+    shutil.rmtree(orig)
+    data["state"] = "finished"
+    write_report(report, data)
+    log(f"deleted {orig}; {src} stays compressed; report {report}")
+    return 0
+
+
+def cmd_discard(args: argparse.Namespace) -> int:
+    src, copy, _, report = paths(args.src)
+    if report.exists() and read_report(report).get("state") != "copied":
+        raise Usage("the copy was swapped in; use `rollback` first")
+    if not copy.is_dir():
+        raise Usage(f"no copy at {copy}")
+    shutil.rmtree(copy)
+    report.unlink(missing_ok=True)
+    log(f"deleted the copy {copy}; {src} is unchanged")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    st = verify.tree_stats(args.path)
+    ratio = st.allocated / st.logical if st.logical else 1
+    log(
+        f"{st.files} files, logical {st.logical / 2**30:.2f} GiB, allocated {st.allocated / 2**30:.2f} GiB "
+        f"({ratio:.3f})"
+    )
+    log(f"types: {st.types}")
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    v = verify.compare(args.original, args.copy, threads=args.threads)
+    log(f"symlinks whose own mtime was not kept: {v.symlink_mtimes}")
+    log(f"{'PASS' if v.passed else 'FAIL'} ({len(v.mismatches)} mismatches)")
+    return 0 if v.passed else 1
+
+
+def cmd_codesign(args: argparse.Namespace) -> int:
+    c = codesign.compare(args.original, args.copy, threads=args.threads)
+    log(f"{'PASS' if c.passed else 'FAIL'} ({len(c.different)} differences)")
+    return 0 if c.passed else 1
+
+
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="apfs-compress", description=__doc__.splitlines()[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name, fn, help_ in (
+        ("copy", cmd_copy, "make and verify a compressed copy next to SRC"),
+        ("swap", cmd_swap, "put the verified copy in SRC's place; the original moves aside"),
+        ("rollback", cmd_rollback, "undo `swap`"),
+        ("finish", cmd_finish, "delete the original that `swap` moved aside"),
+        ("discard", cmd_discard, "delete a copy that was not swapped in"),
+    ):
+        s = sub.add_parser(name, help=help_)
+        s.add_argument("src")
+        s.add_argument("--threads", type=int, default=8)
+        s.add_argument("--force", action="store_true", help="go on although processes name the tree")
+        s.add_argument("--yes", action="store_true", help="confirm `finish`")
+        s.set_defaults(fn=fn)
+    s = sub.add_parser("status", help="files, logical and allocated size and compression types of a tree")
+    s.add_argument("path")
+    s.set_defaults(fn=cmd_status)
+    for name, fn, help_ in (
+        ("verify", cmd_verify, "compare content and metadata of two trees"),
+        ("codesign", cmd_codesign, "compare code signatures of two trees"),
+    ):
+        s = sub.add_parser(name, help=help_)
+        s.add_argument("original")
+        s.add_argument("copy")
+        s.add_argument("--threads", type=int, default=8)
+        s.set_defaults(fn=fn)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    try:
+        return int(args.fn(args))
+    except Usage as e:
+        print(f"apfs-compress: {e}", file=sys.stderr)
+        return 2
+    except subprocess.CalledProcessError as e:
+        print(f"apfs-compress: {e}", file=sys.stderr)
+        return 3

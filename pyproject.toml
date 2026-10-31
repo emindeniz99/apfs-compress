@@ -1,0 +1,36 @@
+[project]
+name = "apfs-compress"
+version = "0.1.0"
+description = "APFS transparent compression of read-mostly trees (Unity editors, SDKs) through a verified copy"
+readme = "README.md"
+authors = [{ name = "Emin Deniz", email = "emindeniz99@gmail.com" }]
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+apfs-compress = "apfs_compress:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Stack supply-chain rule: resolve nothing published in the last 7 days.
+exclude-newer = "7 days"
+
+[dependency-groups]
+dev = ["ruff", "ty"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+extend-exclude = ["research"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ty.environment]
+python-version = "3.9"
+
+[tool.ty.src]
+exclude = ["research"]
