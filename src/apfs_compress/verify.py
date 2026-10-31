@@ -60,6 +60,15 @@ _libc.getxattr.argtypes = [
     ctypes.c_int,
 ]
 _libc.getxattr.restype = ctypes.c_ssize_t
+_libc.setxattr.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_void_p,
+    ctypes.c_size_t,
+    ctypes.c_uint32,
+    ctypes.c_int,
+]
+_libc.setxattr.restype = ctypes.c_int
 _libc.acl_get_link_np.argtypes = [ctypes.c_char_p, ctypes.c_int]
 _libc.acl_get_link_np.restype = ctypes.c_void_p
 _libc.acl_to_text.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ssize_t)]
@@ -76,6 +85,10 @@ def _getxattr(path: bytes, name: bytes, opts: int) -> bytes | None:
     return buf.raw[: max(n, 0)]
 
 
+def has_xattr(path: str, name: str) -> bool:
+    return _getxattr(path.encode(), name.encode(), XATTR_NOFOLLOW) is not None
+
+
 def xattrs(path: str) -> dict[str, bytes]:
     """Visible extended attributes of path itself (a symlink is not followed)."""
     b = path.encode()
@@ -89,6 +102,26 @@ def xattrs(path: str) -> dict[str, bytes]:
         if name:
             out[name.decode(errors="replace")] = _getxattr(b, name, XATTR_NOFOLLOW) or b""
     return out
+
+
+def restore_empty_xattrs(original: str, copy: str) -> int:
+    """Write into the copy the zero-length extended attributes that ditto leaves out.
+
+    ditto does not copy an attribute whose value is empty, such as the empty
+    com.apple.cs.CodeSignature of an ad-hoc signed static library. Returns how many it wrote.
+    """
+    restored = 0
+    for rel in walk(original):
+        pa, pb = os.path.join(original, rel), os.path.join(copy, rel)
+        if not os.path.lexists(pb):
+            continue
+        have = xattrs(pb)
+        for name, value in xattrs(pa).items():
+            if value == b"" and name not in have:
+                if _libc.setxattr(pb.encode(), name.encode(), None, 0, 0, XATTR_NOFOLLOW) != 0:
+                    raise OSError(ctypes.get_errno(), f"setxattr {name} on {pb}")
+                restored += 1
+    return restored
 
 
 def compare_xattrs(a: dict[str, bytes], b: dict[str, bytes]) -> tuple[bool, bool]:

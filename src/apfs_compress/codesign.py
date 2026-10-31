@@ -1,7 +1,9 @@
 """Check that compression changed no code signature. Read-only.
 
 `codesign --verify --deep --strict` runs on every top-level .app bundle of the original and
-on its counterpart in the copy, then `codesign --verify --strict` on every Mach-O file. A file
+on its counterpart in the copy, then `codesign --verify --strict` on every Mach-O file and every
+other file signed through extended attributes (com.apple.cs.CodeDirectory, such as an ad-hoc
+signed static library). A file
 that verifies in one tree must verify in the other. Files unsigned in both are expected: build
 tools and libraries that were never signed.
 """
@@ -14,6 +16,8 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from .verify import has_xattr
+
 DEFAULT_THREADS = os.cpu_count() or 8
 MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
 
@@ -25,7 +29,8 @@ def verify(path: str, deep: bool = False) -> tuple[bool, str]:
 
 
 def find(root: str) -> tuple[list[str], list[str]]:
-    """Top-level .app bundles (not ones nested in another bundle) and Mach-O files, relative."""
+    """Top-level .app bundles (not ones nested in another bundle) and signable files: Mach-O
+    files and files signed through extended attributes. Paths are relative."""
     apps: list[str] = []
     machos: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -37,8 +42,9 @@ def find(root: str) -> tuple[list[str], list[str]]:
             if os.path.islink(p) or not os.path.isfile(p):
                 continue
             with open(p, "rb") as f:
-                if f.read(4) in MACHO_MAGIC:
-                    machos.append(os.path.relpath(p, root))
+                macho = f.read(4) in MACHO_MAGIC
+            if macho or has_xattr(p, "com.apple.cs.CodeDirectory"):
+                machos.append(os.path.relpath(p, root))
     return apps, machos
 
 

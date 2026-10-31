@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from apfs_compress import verify
+from apfs_compress import codesign, verify
 
 CLI = [sys.executable, "-m", "apfs_compress"]
 
@@ -38,6 +38,10 @@ class ApfsCompressTest(unittest.TestCase):
         (self.src / "link").symlink_to("sub/tool.sh")
         (self.src / "outside").symlink_to("../elsewhere")  # leaves the tree, like a shared SDK link
         subprocess.run(["xattr", "-w", "org.example.note", "kept", str(self.src / "text.txt")], check=True)
+        empty = self.src / "sub" / "empty-attr.a"
+        empty.write_bytes(b"!<arch>\n" + b"x" * 5000)
+        subprocess.run(["codesign", "-s", "-", str(empty)], check=True, capture_output=True)
+        subprocess.run(["xattr", "-w", "org.example.empty", "", str(empty)], check=True)
         shutil.copy("/bin/ls", self.src / "sub" / "ls")  # a signed Mach-O (copy2 would copy SF_ flags)
         self.copy = root / ".apfscmp-tree"
         self.orig = root / ".apfscmp-orig-tree"
@@ -60,6 +64,16 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertEqual(verify.sha256(str(self.src / "text.txt")), before)
         self.assertEqual(os.readlink(self.copy / "outside"), "../elsewhere")
         self.assertEqual(verify.xattrs(str(self.copy / "text.txt")).get("org.example.note"), b"kept")
+
+    def test_empty_xattrs_and_xattr_signatures_survive(self) -> None:
+        data = self.copy_ok()
+        self.assertGreaterEqual(data["empty_xattrs_restored"], 1)
+        names = verify.xattrs(str(self.copy / "sub" / "empty-attr.a"))
+        self.assertEqual(names.get("org.example.empty"), b"")
+        self.assertIn("com.apple.cs.CodeDirectory", names)
+        _, signable = codesign.find(str(self.src))
+        self.assertIn(os.path.join("sub", "empty-attr.a"), signable)
+        self.assertEqual(data["codesign"]["different"], [])
 
     def test_compare_finds_changes(self) -> None:
         self.copy_ok()

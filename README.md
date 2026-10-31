@@ -66,13 +66,15 @@ uv run python -m unittest discover -s tests -v
 - **Same content:** the size and SHA-256 of every regular file.
 - **Same code signatures:**
   - `codesign --verify --deep --strict` on every top-level `.app`;
-  - `codesign --verify --strict` on every Mach-O file.
+  - `codesign --verify --strict` on every Mach-O file, and on every other file signed through extended attributes (`com.apple.cs.CodeDirectory`), such as an ad-hoc signed static library.
   
   A file must verify in both trees or in neither. Unsigned build tools are unsigned in both.
 - **Recorded, not checked:**
   - which decmpfs type each file got;
   - logical and allocated size;
   - the free space the copy consumed.
+
+Before verifying, `copy` writes back the zero-length extended attributes that `ditto` leaves out, with or without compression (`cp -p` keeps them). Unity 2022.3.62f3 has six iOS simulator static libraries whose `com.apple.cs.CodeSignature` is empty. They verify either way, but the metadata would differ.
 
 Known differences are reported but not failed:
 
