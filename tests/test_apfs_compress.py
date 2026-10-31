@@ -75,6 +75,17 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertIn(os.path.join("sub", "empty-attr.a"), signable)
         self.assertEqual(data["codesign"]["different"], [])
 
+    def test_hard_links(self) -> None:
+        os.link(self.src / "text.txt", self.src / "sub" / "text-link.txt")
+        outside = Path(self.tmp.name) / "outside-link.bin"
+        os.link(self.src / "random.bin", outside)
+        data = self.copy_ok()
+        self.assertEqual(data["verify"]["hard_link_groups"], 1)
+        self.assertEqual(data["verify"]["external_hard_links"], 1)
+        a, b = self.copy / "text.txt", self.copy / "sub" / "text-link.txt"
+        self.assertEqual(os.stat(a).st_ino, os.stat(b).st_ino)
+        self.assertNotEqual(os.stat(self.copy / "random.bin").st_ino, os.stat(outside).st_ino)
+
     def test_compare_finds_changes(self) -> None:
         self.copy_ok()
         (self.copy / "random.bin").write_bytes(os.urandom(200_000))

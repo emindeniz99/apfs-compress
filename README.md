@@ -64,6 +64,7 @@ uv run python -m unittest discover -s tests -v
   - extended attributes, by name and value;
   - extended ACLs.
 - **Same content:** the size and SHA-256 of every regular file.
+- **Same hard links:** names that share an inode in the original share one in the copy (`ditto` keeps them). A file whose other links lie outside the tree becomes a separate file in the copy; the report counts those. The NDK in `Shared/Android-6000` has one: `libc++_shared.so`, with 3 links and only 1 of them inside the tree.
 - **Same code signatures:**
   - `codesign --verify --deep --strict` on every top-level `.app`;
   - `codesign --verify --strict` on every Mach-O file, and on every other file signed through extended attributes (`com.apple.cs.CodeDirectory`), such as an ad-hoc signed static library.
@@ -127,6 +128,11 @@ Gatekeeper (`spctl`) rejects both the original and the copy of 6000.3.27f2 as "U
   - **fscmp** can write LZBITMAP through the private AppleFSCompression framework, but it is one 2022 commit against an unstable private interface.
   
   All of them modify files in place. `ditto` copies, so the original stays recoverable until `finish`.
+- **What applesauce's source does differently** (`crates/applesauce/src/threads/writer.rs`, read 2026-10-31):
+  - It copies extended attributes with `fcopyfile(COPYFILE_XATTR)`. That keeps zero-length attributes, as `cp -p` does; `ditto` drops them, hence the restore step here.
+  - It copies mode and ACLs with `COPYFILE_SECURITY`, and sets `UF_COMPRESSED` itself.
+  - It skips hard-linked files (`SkipReason::HardLink`), because compressing in place would detach them.
+  - Its verification is optional (`--verify`) and compares content only.
 
 ### Algorithms on macOS 27.2
 

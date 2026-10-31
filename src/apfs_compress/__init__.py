@@ -92,7 +92,8 @@ def write_report(report: Path, data: dict[str, Any]) -> None:
 def known_differences(v: verify.VerifyResult) -> str:
     return (
         f"known differences: {v.symlink_mtimes} symlink mtimes, "
-        f"{v.macos_xattr_values} macOS-managed attribute values"
+        f"{v.macos_xattr_values} macOS-managed attribute values; hard links: {v.hard_link_groups} groups "
+        f"kept, {v.external_hard_links} files linked from outside the tree (copied as separate files)"
     )
 
 
@@ -154,6 +155,8 @@ def cmd_copy(args: argparse.Namespace) -> int:
             "mismatches": v.mismatches,
             "symlink_mtimes_not_kept": v.symlink_mtimes,
             "macos_xattr_values_not_kept": v.macos_xattr_values,
+            "hard_link_groups": v.hard_link_groups,
+            "external_hard_links": v.external_hard_links,
         },
         "codesign": asdict(c),
         "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

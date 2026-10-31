@@ -208,6 +208,8 @@ class VerifyResult:
     mismatches: list[str]
     symlink_mtimes: int
     macos_xattr_values: int
+    hard_link_groups: int = 0
+    external_hard_links: int = 0
 
     @property
     def passed(self) -> bool:
@@ -258,6 +260,21 @@ def compare(
                 mismatch(f"size: {rel}")
             else:
                 files.append(rel)
+    # Hard links: names that share an inode in the original must share one in the copy. A name
+    # whose other links lie outside the tree becomes a separate file in the copy (counted).
+    groups: dict[tuple[int, int], list[str]] = {}
+    for rel, s in a.items():
+        if stat.S_ISREG(s.st_mode) and s.st_nlink > 1:
+            groups.setdefault((s.st_dev, s.st_ino), []).append(rel)
+    hard_link_groups = external_hard_links = 0
+    for names in groups.values():
+        if a[names[0]].st_nlink > len(names):
+            external_hard_links += 1
+        if len(names) > 1:
+            hard_link_groups += 1
+            inodes = {(b[n].st_dev, b[n].st_ino) for n in names if n in b}
+            if len(inodes) != 1:
+                mismatch(f"hard link not kept: {', '.join(names)}")
     log(f"entries {len(a)} / {len(b)}; hashing {len(files)} regular files in both trees, {threads} threads")
 
     def same(rel: str) -> tuple[str, bool]:
@@ -270,4 +287,6 @@ def compare(
                 mismatch(f"sha256: {rel}")
             if i % step == 0 or i == len(files):
                 log(f"  hashed {i}/{len(files)}")
-    return VerifyResult(len(a), len(files), bad, symlink_mtimes, macos_xattr_values)
+    return VerifyResult(
+        len(a), len(files), bad, symlink_mtimes, macos_xattr_values, hard_link_groups, external_hard_links
+    )
