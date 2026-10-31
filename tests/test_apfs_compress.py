@@ -78,6 +78,14 @@ class ApfsCompressTest(unittest.TestCase):
         ):
             self.assertIn(needle, text)
 
+    def test_kernel_managed_xattr_values_may_differ(self) -> None:
+        a = {"com.apple.provenance": b"\x01\x02\x00" + b"A" * 8, "org.example.note": b"kept"}
+        b = {"com.apple.provenance": b"\x01\x02\x00" + b"B" * 8, "org.example.note": b"kept"}
+        self.assertEqual(verify.compare_xattrs(a, b), (True, True))
+        self.assertEqual(verify.compare_xattrs(a, a), (True, False))
+        self.assertEqual(verify.compare_xattrs(a, {**b, "org.example.note": b"changed"}), (False, True))
+        self.assertEqual(verify.compare_xattrs(a, {"org.example.note": b"kept"}), (False, False))
+
     def test_swap_rollback_finish(self) -> None:
         self.copy_ok()
         self.assertEqual(run("finish", str(self.src), "--yes").returncode, 2)  # not swapped yet

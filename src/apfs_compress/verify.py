@@ -4,8 +4,9 @@ Everything here is read-only. For every entry (symlinks are not followed) the tw
 have the same relative paths and types; the same mode, uid, gid and BSD flags except
 UF_COMPRESSED; the same mtime for files and directories; the same symlink targets; the same
 size and SHA-256 for regular files; the same extended attributes (listxattr does not list the
-hidden compression attributes); and the same extended ACL. ditto does not keep a symlink's own
-mtime, so those differences are counted, not failed.
+hidden compression attributes); and the same extended ACL. Two known differences are counted,
+not failed: ditto does not keep a symlink's own mtime, and macOS writes com.apple.provenance and
+com.apple.macl values that no copy can keep (only their presence is compared).
 """
 
 from __future__ import annotations
@@ -24,6 +25,12 @@ from dataclasses import dataclass, field
 XATTR_NOFOLLOW = 0x0001
 XATTR_SHOWCOMPRESSION = 0x0020
 UF_COMPRESSED = 0x20
+DEFAULT_THREADS = os.cpu_count() or 8
+# Written by macOS itself, so a copy cannot keep their values and only their presence can match:
+# com.apple.provenance (macOS 13+): an 11-byte ID of the app whose process created the file;
+# com.apple.macl: the TCC/sandbox list of apps granted access to the file, which gains an entry
+# for the copying process.
+KERNEL_MANAGED_XATTRS = frozenset({"com.apple.provenance", "com.apple.macl"})
 ACL_TYPE_EXTENDED = 0x00000100
 DECMPFS_MAGIC = 0x636D7066  # "fpmc"
 # decmpfs compression types (xnu bsd/sys/decmpfs.h and AppleFSCompression): xattr = data in
@@ -82,6 +89,15 @@ def xattrs(path: str) -> dict[str, bytes]:
         if name:
             out[name.decode(errors="replace")] = _getxattr(b, name, XATTR_NOFOLLOW) or b""
     return out
+
+
+def compare_xattrs(a: dict[str, bytes], b: dict[str, bytes]) -> tuple[bool, bool]:
+    """(equal, kernel_value_differs): the same names, and the same values except for
+    kernel-managed attributes, whose values may differ."""
+    if set(a) != set(b):
+        return False, False
+    differs = [k for k in a if a[k] != b[k]]
+    return all(k in KERNEL_MANAGED_XATTRS for k in differs), bool(differs)
 
 
 def acl_text(path: str) -> str | None:
@@ -158,13 +174,16 @@ class VerifyResult:
     files: int
     mismatches: list[str]
     symlink_mtimes: int
+    macos_xattr_values: int
 
     @property
     def passed(self) -> bool:
         return not self.mismatches
 
 
-def compare(original: str, copy: str, log: Callable[[str], None] = print, threads: int = 8) -> VerifyResult:
+def compare(
+    original: str, copy: str, log: Callable[[str], None] = print, threads: int = DEFAULT_THREADS
+) -> VerifyResult:
     a, b = walk(original), walk(copy)
     bad: list[str] = []
 
@@ -176,7 +195,7 @@ def compare(original: str, copy: str, log: Callable[[str], None] = print, thread
     for rel in sorted(set(a) ^ set(b)):
         mismatch(f"only in {'original' if rel in a else 'copy'}: {rel}")
     files: list[str] = []
-    symlink_mtimes = 0
+    symlink_mtimes = macos_xattr_values = 0
     for rel in sorted(set(a) & set(b)):
         sa, sb = a[rel], b[rel]
         pa, pb = os.path.join(original, rel), os.path.join(copy, rel)
@@ -195,8 +214,10 @@ def compare(original: str, copy: str, log: Callable[[str], None] = print, thread
             mismatch(f"flags {sa.st_flags:#x} != {sb.st_flags:#x}: {rel}")
         if stat.S_ISLNK(sa.st_mode) and os.readlink(pa) != os.readlink(pb):
             mismatch(f"symlink target: {rel}")
-        if xattrs(pa) != xattrs(pb):
+        equal, kernel_differs = compare_xattrs(xattrs(pa), xattrs(pb))
+        if not equal:
             mismatch(f"extended attributes: {rel}")
+        macos_xattr_values += kernel_differs
         if acl_text(pa) != acl_text(pb):
             mismatch(f"acl: {rel}")
         if stat.S_ISREG(sa.st_mode):
@@ -204,13 +225,16 @@ def compare(original: str, copy: str, log: Callable[[str], None] = print, thread
                 mismatch(f"size: {rel}")
             else:
                 files.append(rel)
-    log(f"entries {len(a)} / {len(b)}; hashing {len(files)} regular files in both trees")
+    log(f"entries {len(a)} / {len(b)}; hashing {len(files)} regular files in both trees, {threads} threads")
 
     def same(rel: str) -> tuple[str, bool]:
         return rel, sha256(os.path.join(original, rel)) == sha256(os.path.join(copy, rel))
 
+    step = max(len(files) // 10, 1)
     with ThreadPoolExecutor(threads) as pool:
-        for rel, ok in pool.map(same, files):
+        for i, (rel, ok) in enumerate(pool.map(same, files), 1):
             if not ok:
                 mismatch(f"sha256: {rel}")
-    return VerifyResult(len(a), len(files), bad, symlink_mtimes)
+            if i % step == 0 or i == len(files):
+                log(f"  hashed {i}/{len(files)}")
+    return VerifyResult(len(a), len(files), bad, symlink_mtimes, macos_xattr_values)

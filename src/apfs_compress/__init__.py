@@ -89,6 +89,13 @@ def write_report(report: Path, data: dict[str, Any]) -> None:
     tmp.replace(report)
 
 
+def known_differences(v: verify.VerifyResult) -> str:
+    return (
+        f"known differences: {v.symlink_mtimes} symlink mtimes, "
+        f"{v.macos_xattr_values} macOS-managed attribute values"
+    )
+
+
 def cmd_copy(args: argparse.Namespace) -> int:
     src, copy, orig, report = paths(args.src)
     if not src.is_dir() or src.is_symlink():
@@ -114,8 +121,15 @@ def cmd_copy(args: argparse.Namespace) -> int:
         f"copied in {elapsed:.1f} s; the copy took {(free_before - free_after) / 2**30:.2f} GiB of free space"
     )
 
+    phases = {"ditto_s": round(elapsed, 1)}
+    t = time.time()
     v = verify.compare(str(src), str(copy), log=log, threads=args.threads)
+    phases["verify_s"] = round(time.time() - t, 1)
+    log(f"verify took {phases['verify_s']} s")
+    t = time.time()
     c = codesign.compare(str(src), str(copy), log=log, threads=args.threads)
+    phases["codesign_s"] = round(time.time() - t, 1)
+    log(f"codesign took {phases['codesign_s']} s")
     after = verify.tree_stats(str(copy))
     passed = v.passed and c.passed
     data = {
@@ -126,6 +140,8 @@ def cmd_copy(args: argparse.Namespace) -> int:
         "macos": macos_version(),
         "command": "ditto --noclone --hfsCompression",
         "elapsed_s": round(elapsed, 1),
+        "phases": phases,
+        "threads": args.threads,
         "free_space_used_by_copy": free_before - free_after,
         "original_stats": asdict(before),
         "copy_stats": asdict(after),
@@ -134,6 +150,7 @@ def cmd_copy(args: argparse.Namespace) -> int:
             "files": v.files,
             "mismatches": v.mismatches,
             "symlink_mtimes_not_kept": v.symlink_mtimes,
+            "macos_xattr_values_not_kept": v.macos_xattr_values,
         },
         "codesign": asdict(c),
         "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -141,6 +158,7 @@ def cmd_copy(args: argparse.Namespace) -> int:
     write_report(report, data)
     ratio = after.allocated / before.allocated if before.allocated else 1
     log(f"types in the copy: {after.types}")
+    log(known_differences(v))
     log(
         f"allocated {before.allocated / 2**30:.2f} GiB -> {after.allocated / 2**30:.2f} GiB ({ratio:.3f}), "
         f"saves {(before.allocated - after.allocated) / 2**30:.2f} GiB"
@@ -225,7 +243,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     v = verify.compare(args.original, args.copy, threads=args.threads)
-    log(f"symlinks whose own mtime was not kept: {v.symlink_mtimes}")
+    log(known_differences(v))
     log(f"{'PASS' if v.passed else 'FAIL'} ({len(v.mismatches)} mismatches)")
     return 0 if v.passed else 1
 
@@ -248,7 +266,7 @@ def parser() -> argparse.ArgumentParser:
     ):
         s = sub.add_parser(name, help=help_)
         s.add_argument("src")
-        s.add_argument("--threads", type=int, default=8)
+        s.add_argument("--threads", type=int, default=verify.DEFAULT_THREADS)
         s.add_argument("--force", action="store_true", help="go on although processes name the tree")
         s.add_argument("--yes", action="store_true", help="confirm `finish`")
         s.set_defaults(fn=fn)
@@ -262,7 +280,7 @@ def parser() -> argparse.ArgumentParser:
         s = sub.add_parser(name, help=help_)
         s.add_argument("original")
         s.add_argument("copy")
-        s.add_argument("--threads", type=int, default=8)
+        s.add_argument("--threads", type=int, default=verify.DEFAULT_THREADS)
         s.set_defaults(fn=fn)
     return p
 

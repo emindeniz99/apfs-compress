@@ -74,7 +74,13 @@ uv run python -m unittest discover -s tests -v
   - logical and allocated size;
   - the free space the copy consumed.
 
-One known difference is reported but not failed. `ditto` does not keep a symlink's own mtime; it does keep the symlink's target, which is checked.
+Known differences are reported but not failed:
+
+- **Symlink mtimes:** `ditto` does not keep a symlink's own mtime. It does keep the symlink's target, which is checked.
+- **`com.apple.provenance` values:** macOS 13 and later stamp this 11-byte attribute on every file a process creates. Its last 8 bytes are an ID of that process's app in the ExecPolicy database. The kernel writes it, so no copy can keep the original value. A tree installed by Unity Hub and copied by this tool differs in every file, for example `01 02 00 45 30 A1 03 3F 84 B5 A9` against `01 02 00 BB 71 2F AA 4D 27 09 9C`. Only the attribute's presence is compared ([Eclectic Light](https://eclecticlight.co/2023/03/16/what-is-macos-ventura-doing-tracking-provenance/) on what it is).
+- **`com.apple.macl` values:** TCC and the sandbox keep in it the apps that were granted access to a file, and a copy gains an entry for the copying process. On 2021.3.45f2 only `Unity.app` itself had it: all zeros in the original, one entry in the copy. Only its presence is compared.
+
+Hashing and code-signature checks use one thread per CPU core by default (`--threads` to limit). The report records each phase's time.
 
 ## Notes / learnings (measured 2026-10-31, macOS 27.2, MacBook Pro M-series, Samsung T7 Shield over USB 10 Gb/s)
 
@@ -89,6 +95,8 @@ One known difference is reported but not failed. `ditto` does not keep a symlink
 | Signatures | Unity.app and the Bug Reporter valid in both trees; 740 Mach-O files: 264 valid in both, 476 unsigned in both, 0 different |
 | Function | from the copy: the xLua editor suite 48/48, an Android IL2CPP APK, an iOS export |
 | Start time | batch open and quit of one project: 7.5 and 5.0 s original, 4.5 and 4.3 s compressed |
+
+Unity 2021.3.45f2, installed by Unity Hub, first failed the check on 146,007 `com.apple.provenance` values and on nothing else. A copy run from its compressed tree created a project and quit cleanly, which led to the rule above. Its `Unity.app` also fails `codesign --deep` in the original ("invalid destination for symbolic link in bundle"), and fails the same way in the copy.
 
 Gatekeeper (`spctl`) rejects both the original and the copy of 6000.3.27f2 as "Unnotarized Developer ID". The cause is Unity's notarization of that release, not the compression; 6000.6.7f1 is accepted. The editor runs, because the files carry no quarantine attribute.
 

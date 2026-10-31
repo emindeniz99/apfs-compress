@@ -14,6 +14,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+DEFAULT_THREADS = os.cpu_count() or 8
 MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
 
 
@@ -54,7 +55,9 @@ class CodesignResult:
         return not self.different
 
 
-def compare(original: str, copy: str, log: Callable[[str], None] = print, threads: int = 8) -> CodesignResult:
+def compare(
+    original: str, copy: str, log: Callable[[str], None] = print, threads: int = DEFAULT_THREADS
+) -> CodesignResult:
     apps, machos = find(original)
     different: list[str] = []
     for app in apps:
@@ -71,8 +74,12 @@ def compare(original: str, copy: str, log: Callable[[str], None] = print, thread
         return rel, ok_a, ok_b, err
 
     valid = unsigned = 0
+    step = max(len(machos) // 10, 1)
+    log(f"checking {len(machos)} Mach-O files in both trees, {threads} threads")
     with ThreadPoolExecutor(threads) as pool:
-        for rel, ok_a, ok_b, err in pool.map(both, machos):
+        for i, (rel, ok_a, ok_b, err) in enumerate(pool.map(both, machos), 1):
+            if i % step == 0 or i == len(machos):
+                log(f"  checked {i}/{len(machos)}")
             if ok_a and ok_b:
                 valid += 1
             elif not ok_a and not ok_b:
