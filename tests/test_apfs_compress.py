@@ -140,6 +140,14 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertEqual(verify.compare_xattrs(a, {**b, "org.example.note": b"changed"}), (False, True))
         self.assertEqual(verify.compare_xattrs(a, {"org.example.note": b"kept"}), (False, False))
 
+    def test_copy_may_gain_provenance_only(self) -> None:
+        plain = {"org.example.note": b"kept"}
+        stamped = {**plain, "com.apple.provenance": b"\x01\x02\x00" + b"B" * 8}
+        self.assertEqual(verify.compare_xattrs(plain, stamped), (True, True))
+        self.assertEqual(verify.compare_xattrs(stamped, plain), (False, False))
+        self.assertEqual(verify.compare_xattrs(plain, {**plain, "com.apple.macl": b"\0"}), (False, False))
+        self.assertEqual(verify.compare_xattrs(plain, {**stamped, "org.example.new": b""}), (False, False))
+
     def test_swap_rollback_finish(self) -> None:
         self.copy_ok()
         self.assertEqual(run("finish", str(self.src), "--yes").returncode, 2)  # not swapped yet

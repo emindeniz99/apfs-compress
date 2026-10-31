@@ -92,8 +92,9 @@ def write_report(report: Path, data: dict[str, Any]) -> None:
 def known_differences(v: verify.VerifyResult) -> str:
     return (
         f"known differences: {v.symlink_mtimes} symlink mtimes, "
-        f"{v.macos_xattr_values} macOS-managed attribute values; hard links: {v.hard_link_groups} groups "
-        f"kept, {v.external_hard_links} files linked from outside the tree (copied as separate files)"
+        f"{v.macos_xattr_values} macOS-managed attribute values or additions; "
+        f"hard links: {v.hard_link_groups} groups kept, {v.external_hard_links} files linked "
+        "from outside the tree (copied as separate files)"
     )
 
 

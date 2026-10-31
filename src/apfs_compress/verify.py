@@ -32,6 +32,9 @@ DEFAULT_THREADS = os.cpu_count() or 8
 # com.apple.macl: the TCC/sandbox list of apps granted access to the file, which gains an entry
 # for the copying process.
 KERNEL_MANAGED_XATTRS = frozenset({"com.apple.provenance", "com.apple.macl"})
+# The kernel stamps provenance on every file the copy creates, also where the original has none
+# (an app installed before macOS 13 or by a tool it did not stamp). It cannot be removed.
+STAMPED_ON_CREATE = "com.apple.provenance"
 ACL_TYPE_EXTENDED = 0x00000100
 DECMPFS_MAGIC = 0x636D7066  # "fpmc"
 # decmpfs compression types (xnu bsd/sys/decmpfs.h and AppleFSCompression): xattr = data in
@@ -145,12 +148,13 @@ def restore_appledouble(original: str, copy: str) -> int:
 
 
 def compare_xattrs(a: dict[str, bytes], b: dict[str, bytes]) -> tuple[bool, bool]:
-    """(equal, kernel_value_differs): the same names, and the same values except for
-    kernel-managed attributes, whose values may differ."""
-    if set(a) != set(b):
+    """(equal, kernel_differs): the same names, and the same values except for kernel-managed
+    attributes, whose values may differ; the copy may also gain com.apple.provenance."""
+    added = set(b) - set(a)
+    if set(a) - set(b) or added - {STAMPED_ON_CREATE}:
         return False, False
     differs = [k for k in a if a[k] != b[k]]
-    return all(k in KERNEL_MANAGED_XATTRS for k in differs), bool(differs)
+    return all(k in KERNEL_MANAGED_XATTRS for k in differs), bool(differs or added)
 
 
 def acl_text(path: str) -> str | None:
