@@ -66,7 +66,7 @@ uv run python -m unittest discover -s tests -v
 - **Same content:** the size and SHA-256 of every regular file.
 - **Same hard links:** names that share an inode in the original share one in the copy (`ditto` keeps them). A file whose other links lie outside the tree becomes a separate file in the copy; the report counts those. The NDK in `Shared/Android-6000` has one: `libc++_shared.so`, with 3 links and only 1 of them inside the tree.
 - **Same code signatures:**
-  - `codesign --verify --deep --strict` on every top-level `.app`;
+  - `codesign --verify --deep --strict` on every top-level `.app`, or on the tree itself when it is one;
   - `codesign --verify --strict` on every Mach-O file, and on every other file signed through extended attributes (`com.apple.cs.CodeDirectory`), such as an ad-hoc signed static library.
   
   A file must verify in both trees or in neither. Unsigned build tools are unsigned in both.

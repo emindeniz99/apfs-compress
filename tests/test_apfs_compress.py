@@ -76,6 +76,25 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertIn(os.path.join("sub", "empty-attr.a"), signable)
         self.assertEqual(data["codesign"]["different"], [])
 
+    def test_tree_that_is_an_app_bundle_is_deep_verified(self) -> None:
+        app = Path(self.tmp.name) / "Tool.app"
+        (app / "Contents" / "MacOS").mkdir(parents=True)
+        shutil.copy("/bin/ls", app / "Contents" / "MacOS" / "tool")
+        info = app / "Contents" / "Info.plist"
+        info.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>'
+            "<key>CFBundleExecutable</key><string>tool</string>"
+            "<key>CFBundleIdentifier</key><string>org.example.tool</string></dict></plist>\n"
+        )
+        subprocess.run(["codesign", "-f", "-s", "-", str(app)], check=True, capture_output=True)
+        apps, _ = codesign.find(str(app))
+        self.assertEqual(apps, ["."])
+        other = Path(self.tmp.name) / "Other.app"
+        subprocess.run(["ditto", str(app), str(other)], check=True)
+        self.assertEqual(codesign.compare(str(app), str(other), log=lambda _: None).different, [])
+        info.write_text(info.read_text().replace("org.example.tool", "org.example.changed"))
+        self.assertIn(".", codesign.compare(str(app), str(other), log=lambda _: None).different)
+
     def test_appledouble_files_survive(self) -> None:
         header = struct.pack(">II16sH", 0x00051607, 0x00020000, b"Mac OS X        ", 0)
         (self.src / "._text.txt").write_bytes(header)  # beside its file

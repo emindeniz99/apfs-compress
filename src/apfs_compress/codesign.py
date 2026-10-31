@@ -1,10 +1,10 @@
 """Check that compression changed no code signature. Read-only.
 
-`codesign --verify --deep --strict` runs on every top-level .app bundle of the original and
-on its counterpart in the copy, then `codesign --verify --strict` on every Mach-O file and every
-other file signed through extended attributes (com.apple.cs.CodeDirectory, such as an ad-hoc
-signed static library). A file
-that verifies in one tree must verify in the other. Files unsigned in both are expected: build
+`codesign --verify --deep --strict` runs on every top-level .app bundle of the original (the
+tree itself when it is one) and on its counterpart in the copy, then `codesign --verify
+--strict` on every Mach-O file and every other file signed through extended attributes
+(com.apple.cs.CodeDirectory, such as an ad-hoc signed static library). A file that verifies in
+one tree must verify in the other. Files unsigned in both are expected: build
 tools and libraries that were never signed.
 """
 
@@ -29,13 +29,15 @@ def verify(path: str, deep: bool = False) -> tuple[bool, str]:
 
 
 def find(root: str) -> tuple[list[str], list[str]]:
-    """Top-level .app bundles (not ones nested in another bundle) and signable files: Mach-O
-    files and files signed through extended attributes. Paths are relative."""
-    apps: list[str] = []
+    """Top-level .app bundles (not ones nested in another bundle; "." when root is one) and
+    signable files: Mach-O files and files signed through extended attributes. Paths are
+    relative."""
+    root_is_app = os.path.normpath(root).endswith(".app")
+    apps: list[str] = ["."] if root_is_app else []
     machos: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
         rel = os.path.relpath(dirpath, root)
-        if not any(part.endswith(".app") for part in rel.split(os.sep)):
+        if not root_is_app and not any(part.endswith(".app") for part in rel.split(os.sep)):
             apps += [os.path.normpath(os.path.join(rel, d)) for d in dirnames if d.endswith(".app")]
         for name in filenames:
             p = os.path.join(dirpath, name)
