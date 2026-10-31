@@ -125,6 +125,36 @@ Each tree went through `copy`, `swap` and a functional check, then `finish` afte
 - **Time per tree,** for 2022.3.62f3 with 129,000 files: `ditto` 199 s, verification 75 s, signatures 129 s.
 - **Restores that were needed:** 6 empty `com.apple.cs.CodeSignature` attributes in 2022.3.62f3, and 5 AppleDouble files in the NDK and the emulator. Each failed verification first, which is how they were found.
 
+### Internal disk (2026-10-31)
+
+Candidates came from a read-only survey of the internal disk. Two measures picked them: the estimated gain, and the share of bytes created in the last 90 days (`st_birthtime`, which an unpacked archive does not reset). A tree an updater rewrites every few weeks loses its gain on the next update. Homebrew, mise, rustup, the VS Code extensions and most apps were left alone for that reason.
+
+| Tree | Allocated before → after | Saved | Functional check |
+|---|---|---|---|
+| `~/Applications/Android Studio.app` 2026.2.2 | 3.25 → 1.72 GiB | 1.53 GiB | started, loaded all plugins, quit cleanly |
+| `~/Library/Android/sdk/ndk` (r27b) | 2.41 → 0.98 GiB | 1.43 GiB | NDK clang builds an arm64 binary |
+| `/Applications/Streamlabs Desktop.app` | 1.36 → 0.67 GiB | 0.69 GiB | ran 15 s with no crash report |
+| `/Applications/GeForceNOW.app` | 0.78 → 0.35 GiB | 0.43 GiB | see below |
+| `~/Library/Android/sdk/build-tools` | 0.74 → 0.35 GiB | 0.38 GiB | `aapt2 version` in all four |
+| Pebble SDK 4.17 | 0.75 → 0.40 GiB | 0.35 GiB | the ARM GCC compiles, `qemu-pebble --version` |
+| `/Applications/Leapp.app` | 0.43 → 0.17 GiB | 0.26 GiB | ran 15 s with no crash report |
+| `/Applications/Arduino IDE.app` | 0.51 → 0.25 GiB | 0.25 GiB | ran 15 s with no crash report |
+| `~/Library/Android/sdk/platforms` | 0.62 → 0.48 GiB | 0.14 GiB | `unzip -t` on all five `android.jar` files |
+| `~/Library/Android/sdk/cmake` | 0.09 → 0.05 GiB | 0.04 GiB | `cmake --version` |
+| **Total** | | **5.50 GiB** | |
+
+- **The survey underestimates.** It compresses 64 KiB chunks with zlib level 1 on a sample. It estimated 1.01 GiB for Android Studio, which saved 1.53 GiB.
+- **GeForceNOW updated itself** the first time it ran from the compressed bundle. It installed an update it had staged in 2023 (2.0.56.123 → .132), and the new bundle was written uncompressed. It was compressed again and not launched after that.
+- **Not compressed, though the estimate was high:**
+  - the pnpm store (12.4 GiB) and bun's cache, because projects may share their blocks as APFS clones, and a compressed copy would end the sharing;
+  - Xcode's `CoreDevice`, which Apple manages and which has 1,135 hard links;
+  - Chrome, Bitwarden, Spark and TeamViewer, which belong to root.
+- **New fixes this run:**
+  - the copy may gain `com.apple.provenance`;
+  - quarantine values are written back;
+  - a tree that is itself an `.app` is deep-verified;
+  - `copy` can run again after `finish`.
+
 Unity 2021.3.45f2, installed by Unity Hub, first failed the check on 146,007 `com.apple.provenance` values and on nothing else. A copy run from its compressed tree created a project and quit cleanly, which led to the rule above. Its `Unity.app` also fails `codesign --deep` in the original ("invalid destination for symbolic link in bundle"), and fails the same way in the copy.
 
 Gatekeeper (`spctl`) rejects both the original and the copy of 6000.3.27f2 as "Unnotarized Developer ID". The cause is Unity's notarization of that release, not the compression; 6000.6.7f1 is accepted. The editor runs, because the files carry no quarantine attribute.
