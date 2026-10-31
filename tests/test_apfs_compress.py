@@ -171,6 +171,9 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertEqual(run("finish", str(self.src), "--yes").returncode, 0)
         self.assertFalse(self.orig.exists())
         self.assertEqual(json.loads(self.report.read_text())["state"], "finished")
+        # an updater rewrote the tree after finish: a new copy replaces the finished report
+        (self.src / "text.txt").write_text("updated line of text\n" * 40000)
+        self.assertEqual(self.copy_ok()["state"], "copied")
 
     def test_refusals(self) -> None:
         self.copy_ok()

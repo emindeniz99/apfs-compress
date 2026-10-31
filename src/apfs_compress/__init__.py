@@ -102,7 +102,9 @@ def cmd_copy(args: argparse.Namespace) -> int:
     src, copy, orig, report = paths(args.src)
     if not src.is_dir() or src.is_symlink():
         raise Usage(f"{src} is not a directory")
-    for p in (copy, orig, report):
+    # A finished report only records an earlier run; an app may have updated itself since.
+    finished = report.exists() and read_report(report).get("state") == "finished"
+    for p in (copy, orig) if finished else (copy, orig, report):
         if p.exists():
             raise Usage(f"{p} already exists (`discard`, `rollback` or `finish` first)")
     fs = filesystem(src)
