@@ -79,6 +79,7 @@ Before verifying, `copy` puts back what `ditto` leaves out:
 
 - **AppleDouble files (`._name`):** `ditto` treats them as metadata of `name` and does not copy them, with or without a `name` beside them. Tarballs packed on macOS and unpacked elsewhere leave them behind; the Android NDK r30 and emulator in `android-sdk` have five. `copy` copies them with `cp -p`, byte for byte.
 - **Zero-length extended attributes:** `copy` writes back the ones that `ditto` leaves out, with or without compression (`cp -p` keeps them). Unity 2022.3.62f3 has six iOS simulator static libraries whose `com.apple.cs.CodeSignature` is empty. They verify either way, but the metadata would differ.
+- **`com.apple.quarantine` values:** `ditto` keeps the attribute but writes a new one: the time of the copy instead of the download time, and no agent name. Leapp, installed by Homebrew Cask, went from `0181;669c2fe5;Homebrew Cask;<uuid>` to `0181;6ae62a3b;;<uuid>` on all 293 entries. The flags and UUID, which Gatekeeper uses, stayed. `copy` writes the original value back.
 
 Known differences are reported but not failed:
 

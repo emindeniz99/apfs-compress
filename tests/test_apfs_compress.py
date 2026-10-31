@@ -95,6 +95,14 @@ class ApfsCompressTest(unittest.TestCase):
         info.write_text(info.read_text().replace("org.example.tool", "org.example.changed"))
         self.assertIn(".", codesign.compare(str(app), str(other), log=lambda _: None).different)
 
+    def test_quarantine_value_survives(self) -> None:
+        value = "0181;669c2fe5;Homebrew Cask;BC0084AB-2C1E-4BD6-AD0E-5C2CEF83B675"
+        subprocess.run(["xattr", "-w", "com.apple.quarantine", value, str(self.src / "text.txt")], check=True)
+        data = self.copy_ok()
+        self.assertEqual(data["quarantine_values_restored"], 1)
+        names = verify.xattrs(str(self.copy / "text.txt"))
+        self.assertEqual(names.get("com.apple.quarantine"), value.encode())
+
     def test_appledouble_files_survive(self) -> None:
         header = struct.pack(">II16sH", 0x00051607, 0x00020000, b"Mac OS X        ", 0)
         (self.src / "._text.txt").write_bytes(header)  # beside its file

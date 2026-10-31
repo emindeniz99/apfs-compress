@@ -121,9 +121,10 @@ def cmd_copy(args: argparse.Namespace) -> int:
     elapsed, free_after = time.time() - t0, free_bytes(src.parent)
     appledouble = verify.restore_appledouble(str(src), str(copy))
     restored = verify.restore_empty_xattrs(str(src), str(copy))
+    quarantine = verify.restore_quarantine(str(src), str(copy))
     log(
         f"restored {appledouble} AppleDouble files and {restored} empty extended attributes "
-        "that ditto leaves out"
+        f"that ditto leaves out, and {quarantine} quarantine values it rewrites"
     )
     log(
         f"copied in {elapsed:.1f} s; the copy took {(free_before - free_after) / 2**30:.2f} GiB of free space"
@@ -151,6 +152,7 @@ def cmd_copy(args: argparse.Namespace) -> int:
         "phases": phases,
         "empty_xattrs_restored": restored,
         "appledouble_files_restored": appledouble,
+        "quarantine_values_restored": quarantine,
         "threads": args.threads,
         "free_space_used_by_copy": free_before - free_after,
         "original_stats": asdict(before),

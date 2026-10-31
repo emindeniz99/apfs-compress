@@ -35,6 +35,7 @@ KERNEL_MANAGED_XATTRS = frozenset({"com.apple.provenance", "com.apple.macl"})
 # The kernel stamps provenance on every file the copy creates, also where the original has none
 # (an app installed before macOS 13 or by a tool it did not stamp). It cannot be removed.
 STAMPED_ON_CREATE = "com.apple.provenance"
+QUARANTINE = "com.apple.quarantine"
 ACL_TYPE_EXTENDED = 0x00000100
 DECMPFS_MAGIC = 0x636D7066  # "fpmc"
 # decmpfs compression types (xnu bsd/sys/decmpfs.h and AppleFSCompression): xattr = data in
@@ -125,6 +126,26 @@ def restore_empty_xattrs(original: str, copy: str) -> int:
                 if _libc.setxattr(pb.encode(), name.encode(), None, 0, 0, XATTR_NOFOLLOW) != 0:
                     raise OSError(ctypes.get_errno(), f"setxattr {name} on {pb}")
                 restored += 1
+    return restored
+
+
+def restore_quarantine(original: str, copy: str) -> int:
+    """Write the original com.apple.quarantine value back into the copy.
+
+    ditto keeps the attribute but rewrites it through the quarantine API: the timestamp
+    becomes the time of the copy and the agent name (such as "Homebrew Cask") is dropped,
+    while the flags and the event UUID stay. setxattr keeps the value as written. Returns
+    how many values it wrote.
+    """
+    restored = 0
+    for rel in walk(original):
+        pa, pb = os.path.join(original, rel), os.path.join(copy, rel)
+        value = xattrs(pa).get(QUARANTINE)
+        if value is None or not os.path.lexists(pb) or xattrs(pb).get(QUARANTINE) == value:
+            continue
+        if _libc.setxattr(pb.encode(), QUARANTINE.encode(), value, len(value), 0, XATTR_NOFOLLOW) != 0:
+            raise OSError(ctypes.get_errno(), f"setxattr {QUARANTINE} on {pb}")
+        restored += 1
     return restored
 
 
