@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -67,7 +68,11 @@ def filesystem(path: Path) -> str:
 
 def users_of(path: Path) -> list[str]:
     """Processes whose command line names the tree (a cheap check; lsof +D is too slow)."""
-    r = subprocess.run(["pgrep", "-fl", str(path)], capture_output=True, text=True, check=False)
+    # pgrep -f takes an extended regular expression; the path is literal text, and "(2)" or
+    # "[beta]" in a name would otherwise match something else or make pgrep fail.
+    r = subprocess.run(["pgrep", "-fl", re.escape(str(path))], capture_output=True, text=True, check=False)
+    if r.returncode not in (0, 1):  # 1: no process matched
+        raise Usage(f"pgrep failed ({r.returncode}): {r.stderr.strip()}")
     me = {str(os.getpid()), str(os.getppid())}
     return [line for line in r.stdout.splitlines() if line.split(" ", 1)[0] not in me]
 

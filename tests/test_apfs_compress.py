@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import apfs_compress
 from apfs_compress import codesign, verify
 
 CLI = [sys.executable, "-m", "apfs_compress"]
@@ -139,6 +140,18 @@ class ApfsCompressTest(unittest.TestCase):
             "only in copy: extra",
         ):
             self.assertIn(needle, text)
+
+    def test_process_check_escapes_the_path(self) -> None:
+        # pgrep -f takes a regular expression; "(1)" would match "1" and "[a]" would match "a".
+        tree = Path(self.tmp.name) / "tree (1) [a]"
+        tree.mkdir()
+        user = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", str(tree)])
+        self.addCleanup(user.wait)
+        self.addCleanup(user.kill)
+        users = apfs_compress.users_of(tree)
+        self.assertEqual(len(users), 1, users)
+        self.assertTrue(users[0].startswith(f"{user.pid} "), users)
+        self.assertEqual(apfs_compress.users_of(Path(self.tmp.name) / "nobody"), [])
 
     def test_kernel_managed_xattr_values_may_differ(self) -> None:
         a = {"com.apple.provenance": b"\x01\x02\x00" + b"A" * 8, "org.example.note": b"kept"}
