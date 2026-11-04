@@ -31,6 +31,8 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ty.environment]
 python-version = "3.9"
+# The tool runs on macOS only (st_flags, ditto, codesign); check it as such, also on a Linux runner.
+python-platform = "darwin"
 
 [tool.ty.src]
 exclude = ["research"]
