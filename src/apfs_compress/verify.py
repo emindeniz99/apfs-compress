@@ -222,6 +222,19 @@ def walk(root: str) -> dict[str, os.stat_result]:
     return out
 
 
+def fingerprint(stats: dict[str, os.stat_result]) -> str:
+    """A SHA-256 over the names, types, sizes and mtimes of a walk. It changes when an entry is
+    added, removed, replaced or rewritten; directory mtimes are left out, as in compare. It is a
+    cheap check that a tree is still the one a report describes, not a content hash."""
+    h = hashlib.sha256()
+    for rel in sorted(stats):
+        s = stats[rel]
+        mtime = 0 if stat.S_ISDIR(s.st_mode) else s.st_mtime_ns
+        line = f"{rel}\0{stat.S_IFMT(s.st_mode)}\0{s.st_size}\0{mtime}\n"
+        h.update(line.encode("utf-8", "surrogateescape"))
+    return h.hexdigest()
+
+
 @dataclass
 class TreeStats:
     files: int = 0
@@ -255,6 +268,8 @@ class VerifyResult:
     macos_xattr_values: int
     hard_link_groups: int = 0
     external_hard_links: int = 0
+    original_fingerprint: str = ""
+    copy_fingerprint: str = ""
 
     @property
     def passed(self) -> bool:
@@ -333,5 +348,13 @@ def compare(
             if i % step == 0 or i == len(files):
                 log(f"  hashed {i}/{len(files)}")
     return VerifyResult(
-        len(a), len(files), bad, symlink_mtimes, macos_xattr_values, hard_link_groups, external_hard_links
+        len(a),
+        len(files),
+        bad,
+        symlink_mtimes,
+        macos_xattr_values,
+        hard_link_groups,
+        external_hard_links,
+        fingerprint(a),
+        fingerprint(b),
     )

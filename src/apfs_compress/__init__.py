@@ -167,6 +167,8 @@ def cmd_copy(args: argparse.Namespace) -> int:
         "verify": {
             "entries": v.entries,
             "files": v.files,
+            "original_fingerprint": v.original_fingerprint,
+            "copy_fingerprint": v.copy_fingerprint,
             "mismatches": v.mismatches,
             "symlink_mtimes_not_kept": v.symlink_mtimes,
             "macos_xattr_values_not_kept": v.macos_xattr_values,
@@ -196,9 +198,16 @@ def cmd_swap(args: argparse.Namespace) -> int:
     if data.get("result") != "PASS" or data.get("state") != "copied":
         raise Usage(f"report is {data.get('result')}/{data.get('state')}, not PASS/copied")
     if not copy.is_dir() or orig.exists():
-        raise Usage(f"need {copy} and no {orig}")
-    if len(verify.walk(str(copy))) != data["verify"]["entries"]:
+        raise Usage(f"need {copy} and no {orig} (`rollback` puts a moved-aside original back)")
+    # Both trees must still be what the report describes: the copy since it was verified, and
+    # the original since it was copied (an app may have updated itself in the meantime).
+    fingerprints = data["verify"].get("original_fingerprint"), data["verify"].get("copy_fingerprint")
+    if None in fingerprints:
+        raise Usage("the report is from an older version; `discard` the copy and run `copy` again")
+    if verify.fingerprint(verify.walk(str(copy))) != fingerprints[1]:
         raise Usage("the copy changed since it was verified; `discard` it and run `copy` again")
+    if verify.fingerprint(verify.walk(str(src))) != fingerprints[0]:
+        raise Usage("the original changed since it was copied; `discard` the copy and run `copy` again")
     users = users_of(src)
     if users and not args.force:
         raise Usage("processes use the tree (close them, or pass --force):\n  " + "\n  ".join(users))

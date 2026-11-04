@@ -211,6 +211,29 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertEqual(json.loads(self.report.read_text())["state"], "finished")
         self.assertEqual(data["verify"]["mismatches"], [])
 
+    def test_swap_refuses_a_changed_original(self) -> None:
+        # an app updated itself after copy: finish would delete the newer tree
+        self.copy_ok()
+        text = self.src / "text.txt"
+        text.write_text("updated line of text\n" * 40000)
+        os.utime(text, (1_700_000_000, 1_700_000_000))
+        r = run("swap", str(self.src))
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("the original changed", r.stderr)
+        self.assertFalse(self.orig.exists())
+        self.assertEqual(run("discard", str(self.src)).returncode, 0)
+        self.copy_ok()
+        (self.src / "added").write_text("x")
+        self.assertEqual(run("swap", str(self.src)).returncode, 2)
+
+    def test_swap_refuses_a_report_without_fingerprints(self) -> None:
+        data = self.copy_ok()
+        del data["verify"]["original_fingerprint"]
+        self.report.write_text(json.dumps(data))
+        r = run("swap", str(self.src))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("older version", r.stderr)
+
     def test_discard_cleans_up_a_copy_that_failed_after_finish(self) -> None:
         self.copy_ok()
         self.assertEqual(run("swap", str(self.src)).returncode, 0)
