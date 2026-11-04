@@ -20,7 +20,7 @@ build-backend = "hatchling.build"
 path = "src/apfs_compress/__init__.py"
 
 [tool.uv]
-# Stack supply-chain rule: resolve nothing published in the last 7 days.
+# Supply-chain rule: resolve nothing published in the last 7 days.
 exclude-newer = "7 days"
 
 [dependency-groups]
