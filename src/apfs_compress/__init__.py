@@ -212,13 +212,20 @@ def cmd_swap(args: argparse.Namespace) -> int:
 
 
 def cmd_rollback(args: argparse.Namespace) -> int:
+    """Put the original back. `swap` and `rollback` are two renames each, and the report is
+    written after them, so a kill can leave SRC missing (the original at orig, the copy at copy)
+    or the report a step behind the directories; both are finished here."""
     src, copy, orig, report = paths(args.src)
-    if not orig.is_dir() or copy.exists():
-        raise Usage(f"need {orig} and no {copy}")
-    src.rename(copy)
-    orig.rename(src)
-    if report.exists():
-        data = read_report(report)
+    data = read_report(report) if report.exists() else None
+    if orig.is_dir():
+        if os.path.lexists(src):
+            if os.path.lexists(copy):
+                raise Usage(f"need no {copy}")
+            src.rename(copy)
+        orig.rename(src)
+    elif not (data and data.get("state") == "swapped" and copy.is_dir() and src.is_dir()):
+        raise Usage(f"no {orig}; nothing to roll back")
+    if data:
         data["state"] = "copied"
         write_report(report, data)
     log(f"{src} is the original again; the compressed copy is at {copy}")
@@ -226,16 +233,22 @@ def cmd_rollback(args: argparse.Namespace) -> int:
 
 
 def cmd_finish(args: argparse.Namespace) -> int:
-    src, _, orig, report = paths(args.src)
+    src, copy, orig, report = paths(args.src)
     data = read_report(report)
-    if data.get("state") != "swapped" or not orig.is_dir():
+    if data.get("state") != "swapped":
         raise Usage(f"report state is {data.get('state')}; nothing to finish")
-    if not args.yes:
-        raise Usage(f"this deletes {orig}; pass --yes")
-    shutil.rmtree(orig)
+    if orig.is_dir():
+        if not args.yes:
+            raise Usage(f"this deletes {orig}; pass --yes")
+        shutil.rmtree(orig)
+        log(f"deleted {orig}")
+    elif copy.exists():
+        raise Usage(f"{copy} exists and {orig} does not: a `rollback` was interrupted; run it again")
+    else:
+        log(f"{orig} is already gone")  # a kill between the delete and the report
     data["state"] = "finished"
     write_report(report, data)
-    log(f"deleted {orig}; {src} stays compressed; report {report}")
+    log(f"{src} stays compressed; report {report}")
     return 0
 
 

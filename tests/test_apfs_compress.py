@@ -188,6 +188,29 @@ class ApfsCompressTest(unittest.TestCase):
         (self.src / "text.txt").write_text("updated line of text\n" * 40000)
         self.assertEqual(self.copy_ok()["state"], "copied")
 
+    def test_interrupted_swap_rollback_and_finish_recover(self) -> None:
+        data = self.copy_ok()
+        # a kill between the two renames of swap: SRC is missing, the original is moved aside
+        self.src.rename(self.orig)
+        self.assertEqual(run("swap", str(self.src)).returncode, 2)
+        self.assertEqual(run("discard", str(self.src)).returncode, 2)  # would delete the only copy
+        self.assertEqual(run("rollback", str(self.src)).returncode, 0)
+        self.assertIsNone(verify.compression_type(str(self.src / "text.txt")))
+        self.assertTrue(self.copy.is_dir())
+        self.assertEqual(run("swap", str(self.src)).returncode, 0)
+        # a kill between the renames of rollback and its report: the report still says swapped
+        self.src.rename(self.copy)
+        self.orig.rename(self.src)
+        self.assertEqual(run("finish", str(self.src), "--yes").returncode, 2)  # the copy is still there
+        self.assertEqual(run("rollback", str(self.src)).returncode, 0)
+        self.assertEqual(json.loads(self.report.read_text())["state"], "copied")
+        self.assertEqual(run("swap", str(self.src)).returncode, 0)
+        # a kill between finish's delete and its report: nothing is left to delete
+        shutil.rmtree(self.orig)
+        self.assertEqual(run("finish", str(self.src), "--yes").returncode, 0)
+        self.assertEqual(json.loads(self.report.read_text())["state"], "finished")
+        self.assertEqual(data["verify"]["mismatches"], [])
+
     def test_discard_cleans_up_a_copy_that_failed_after_finish(self) -> None:
         self.copy_ok()
         self.assertEqual(run("swap", str(self.src)).returncode, 0)
