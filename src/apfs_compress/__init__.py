@@ -240,14 +240,21 @@ def cmd_finish(args: argparse.Namespace) -> int:
 
 
 def cmd_discard(args: argparse.Namespace) -> int:
-    src, copy, _, report = paths(args.src)
-    if report.exists() and read_report(report).get("state") != "copied":
-        raise Usage("the copy was swapped in; use `rollback` first")
-    if not copy.is_dir():
+    """Delete a copy that was not swapped in, and the report that describes it. A report left by
+    `finish` stays: it records that run, and a later `copy` that failed may have left the copy."""
+    src, copy, orig, report = paths(args.src)
+    data = read_report(report) if report.exists() else {}
+    if data.get("state") == "swapped" or orig.exists():
+        raise Usage(f"the copy was swapped in (the original is at {orig}); use `rollback` first")
+    if copy.is_dir():
+        shutil.rmtree(copy)
+        log(f"deleted the copy {copy}; {src} is unchanged")
+    elif data.get("state") != "copied":
         raise Usage(f"no copy at {copy}")
-    shutil.rmtree(copy)
-    report.unlink(missing_ok=True)
-    log(f"deleted the copy {copy}; {src} is unchanged")
+    else:
+        log(f"no copy at {copy}; removing its report")
+    if data.get("state") == "copied":
+        report.unlink()
     return 0
 
 

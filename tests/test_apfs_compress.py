@@ -188,6 +188,24 @@ class ApfsCompressTest(unittest.TestCase):
         (self.src / "text.txt").write_text("updated line of text\n" * 40000)
         self.assertEqual(self.copy_ok()["state"], "copied")
 
+    def test_discard_cleans_up_a_copy_that_failed_after_finish(self) -> None:
+        self.copy_ok()
+        self.assertEqual(run("swap", str(self.src)).returncode, 0)
+        self.assertEqual(run("finish", str(self.src), "--yes").returncode, 0)
+        self.copy.mkdir()  # what a copy that died during ditto or verification leaves behind
+        self.assertEqual(run("copy", str(self.src)).returncode, 2)
+        self.assertEqual(run("discard", str(self.src)).returncode, 0)
+        self.assertFalse(self.copy.exists())
+        self.assertEqual(json.loads(self.report.read_text())["state"], "finished")  # that record stays
+        self.assertEqual(run("discard", str(self.src)).returncode, 2)  # nothing left to discard
+        # a copy deleted by hand leaves a report that blocked the next copy
+        self.copy_ok()
+        shutil.rmtree(self.copy)
+        self.assertEqual(run("copy", str(self.src)).returncode, 2)
+        self.assertEqual(run("discard", str(self.src)).returncode, 0)
+        self.assertFalse(self.report.exists())
+        self.assertEqual(self.copy_ok()["state"], "copied")
+
     def test_refusals(self) -> None:
         self.copy_ok()
         self.assertEqual(run("copy", str(self.src)).returncode, 2)  # copy exists
