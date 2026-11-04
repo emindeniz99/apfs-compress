@@ -1,32 +1,63 @@
 # apfs-compress
 
-## What it does
+[![ci](https://github.com/emindeniz99/apfs-compress/actions/workflows/ci.yml/badge.svg)](https://github.com/emindeniz99/apfs-compress/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/emindeniz99/apfs-compress)](https://github.com/emindeniz99/apfs-compress/releases/latest)
+[![license](https://img.shields.io/github/license/emindeniz99/apfs-compress)](LICENSE)
 
-It shrinks read-mostly trees on APFS, such as Unity editors and Android SDKs, with APFS transparent compression. Files stay compressed on disk, and the kernel decompresses them into memory when they are read, so programs see no difference.
+apfs-compress shrinks read-mostly trees on APFS, such as Unity editors and Android SDKs, with APFS transparent compression. Files stay compressed on disk, and the kernel decompresses them into memory when a program reads them, so programs see no difference. The tool never compresses in place: Apple's own `ditto --noclone --hfsCompression` writes a compressed copy next to the original, the tool checks every file of the copy against the original (content, metadata and code signatures), and you put the copy in place, undo that, or delete the original with separate commands. On one machine it saved 46.2 GiB across nine trees on an external SSD and 5.50 GiB on the internal disk; the measurements are below.
 
-It never compresses in place. Apple's own `ditto --noclone --hfsCompression` makes a compressed copy next to the original. The tool then checks every file of the copy against the original: content, metadata and code signatures. It changes the original only through separate steps you run yourself: `swap`, `rollback` and `finish`.
+## Install
 
-## How to run
-
-macOS on APFS, with Python 3.9 or later. The tool uses the standard library only. Development uses uv and Python from `mise.toml` and `.python-version`.
+macOS on APFS, with Python 3.9 or later. The tool uses the standard library only, and runs Apple's `ditto` and `codesign`, which come with macOS.
 
 ```bash
 uv tool install git+https://github.com/emindeniz99/apfs-compress   # puts apfs-compress in ~/.local/bin
 # or from a clone: uv tool install .
+```
 
-apfs-compress copy   /Volumes/T7Data/Unity/Editors/6000.3.27f2   # copy, verify, report; original untouched
-# test the copy: it is at .../Editors/.apfscmp-6000.3.27f2 (run the app from there)
-apfs-compress swap   /Volumes/T7Data/Unity/Editors/6000.3.27f2   # only after a PASS report
-apfs-compress rollback /Volumes/T7Data/Unity/Editors/6000.3.27f2 # undo swap
-apfs-compress finish /Volumes/T7Data/Unity/Editors/6000.3.27f2 --yes  # delete the moved-aside original
-apfs-compress discard /Volumes/T7Data/Unity/Editors/6000.3.27f2  # delete a copy that was not swapped in
+## Quick start
 
-apfs-compress status  PATH            # files, logical vs allocated size, compression types
-apfs-compress verify  ORIGINAL COPY   # content and metadata comparison alone
+Close every program that uses the tree first. `copy` and `swap` refuse when a process's command line names the tree; `--force` overrides that check.
+
+```bash
+apfs-compress copy /Volumes/T7Data/Unity/Editors/6000.3.27f2
+```
+
+`copy` makes the compressed copy at `/Volumes/T7Data/Unity/Editors/.apfscmp-6000.3.27f2`, checks it against the original and writes a report beside it. The original is untouched. A `PASS` line and exit code 0 mean every check passed; a `FAIL` leaves both trees for you to inspect.
+
+Test the copy: run the program from `.apfscmp-6000.3.27f2`. The copy sits beside the original at the same depth, so relative symlinks that point out of the tree keep resolving while you test it. Our Unity editors' `AndroidPlayer/SDK -> ../../../../Shared/...` is such a link.
+
+```bash
+apfs-compress swap /Volumes/T7Data/Unity/Editors/6000.3.27f2
+```
+
+`swap` puts the copy in the original's place and moves the original to `.apfscmp-orig-6000.3.27f2`. It refuses without a `PASS` report, and when either tree changed since `copy`. Test again from the real path.
+
+```bash
+apfs-compress finish /Volumes/T7Data/Unity/Editors/6000.3.27f2 --yes
+```
+
+`finish` deletes the moved-aside original, and only with `--yes`. Until then `rollback` puts the original back, and `discard` deletes a copy that was not swapped in:
+
+```bash
+apfs-compress rollback /Volumes/T7Data/Unity/Editors/6000.3.27f2
+apfs-compress discard  /Volumes/T7Data/Unity/Editors/6000.3.27f2
+```
+
+## Commands
+
+```bash
+apfs-compress copy     SRC            # make and verify a compressed copy next to SRC
+apfs-compress swap     SRC            # put the verified copy in SRC's place; the original moves aside
+apfs-compress rollback SRC            # undo swap
+apfs-compress finish   SRC --yes      # delete the original that swap moved aside
+apfs-compress discard  SRC            # delete a copy that was not swapped in
+apfs-compress status   PATH           # files, logical vs allocated size, compression types
+apfs-compress verify   ORIGINAL COPY  # content and metadata comparison alone
 apfs-compress codesign ORIGINAL COPY  # code-signature comparison alone
 ```
 
-Close every program that uses the tree first. `copy` and `swap` refuse when a process's command line names the tree; `--force` overrides that check.
+`--threads N` limits the hashing and code-signature threads of `copy`, `verify` and `codesign` (default: one per CPU core). `--force` makes `copy` and `swap` go on although processes name the tree.
 
 ### Exit codes
 
@@ -46,9 +77,9 @@ Close every program that uses the tree first. `copy` and `swap` refuse when a pr
 | `.apfscmp-orig-<name>` | the original, after `swap` |
 | `.apfscmp-<name>.json` | the report: result, state, sizes, compression types, mismatches |
 
-The copy sits beside the original at the same depth, so relative symlinks that point out of the tree keep resolving while you test the copy. Our Unity editors' `AndroidPlayer/SDK -> ../../../../Shared/...` is such a link.
-
 ### Development
+
+Development uses uv and the Python version in `mise.toml` and `.python-version`. The unit tests make a tree in a temporary directory and compress it with `ditto`, so they run on macOS on APFS only; lint and types run anywhere.
 
 ```bash
 uv sync --locked
