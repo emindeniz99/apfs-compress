@@ -302,9 +302,10 @@ def compare(
         if stat.S_IFMT(sa.st_mode) != stat.S_IFMT(sb.st_mode):
             mismatch(f"type: {rel}")
             continue
-        for key in ("st_mode", "st_uid", "st_gid"):
-            if getattr(sa, key) != getattr(sb, key):
-                mismatch(f"{key} {getattr(sa, key):o} != {getattr(sb, key):o}: {rel}")
+        for key, fmt in (("st_mode", "o"), ("st_uid", "d"), ("st_gid", "d")):
+            va, vb = getattr(sa, key), getattr(sb, key)
+            if va != vb:
+                mismatch(f"{key} {va:{fmt}} != {vb:{fmt}}: {rel}")
         if not stat.S_ISDIR(sa.st_mode) and int(sa.st_mtime) != int(sb.st_mtime):
             if stat.S_ISLNK(sa.st_mode):
                 symlink_mtimes += 1

@@ -148,7 +148,7 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertFalse(result.passed)
         for needle in (
             "sha256: random.bin",
-            "st_mode",
+            "st_mode 100755 != 100644: sub/tool.sh",  # modes in octal, as ls and chmod show them
             "extended attributes: text.txt",
             "only in copy: extra",
         ):
