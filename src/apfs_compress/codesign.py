@@ -104,6 +104,7 @@ def compare(
                 unsigned += 1
             else:
                 different.append(rel)
-                log(f"DIFFERENT {rel}: original {'valid' if ok_a else 'invalid'}, copy {err or 'valid'}")
+                copy_state = "valid" if ok_b else f"invalid: {err}"
+                log(f"DIFFERENT {rel}: original {'valid' if ok_a else 'invalid'}, copy {copy_state}")
     log(f"Mach-O files {len(machos)}: valid in both {valid}, unsigned or invalid in both {unsigned}")
     return CodesignResult(len(apps), len(machos), valid, unsigned, different)
