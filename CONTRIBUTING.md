@@ -33,3 +33,7 @@ uv run python -m unittest discover -s tests -v     # macOS on APFS only
 The tests make a tree in a temporary directory and compress it with `ditto`, so they run only on macOS. CI runs them on a macOS runner; lint and types run anywhere.
 
 A measured finding goes into the README's notes with the script that produced it, under `research/`.
+
+## Releases
+
+release-please keeps one release PR open from the Conventional Commits on `main`; merging it (merge commit, as always) creates the tag and the GitHub Release. Never edit `version.txt` and `__version__` in `src/apfs_compress/__init__.py` by hand: the release PR bumps them. A `fix` makes a patch release, a `feat` a minor one, a `!` or a `BREAKING CHANGE:` footer a major one; `docs`, `test`, `ci` and `chore` commits do not make a release on their own.

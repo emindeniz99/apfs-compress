@@ -15,6 +15,10 @@ This is the one source of truth for coding agents (Codex reads it natively; `CLA
 - Standard library only, Python 3.9 and later. Lint and types with ruff and ty before committing; the unit tests need macOS on APFS.
 - A measured result goes into the README's notes with the script that produced it, under `research/`.
 
+## Releases
+
+- release-please owns the version: never edit `version.txt` and `__version__` in `src/apfs_compress/__init__.py` by hand, and never create a tag or a release by hand; merge the release PR. Its commit types decide the bump, so a behavior change is a `feat` or a `fix`, never a `chore`.
+
 ## Privacy
 
 No file names, paths or app identifiers from the user's machine beyond what the README's measurements already name, and nothing that identifies an account.
