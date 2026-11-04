@@ -34,7 +34,8 @@ jobs:
         with:
           persist-credentials: false
       - name: install uv
-        run: python3 -m pip install --user uv==0.13.5 && echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
+        # Homebrew's Python refuses pip installs (PEP 668); the runner image ships pipx.
+        run: pipx install uv==0.13.5 && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: sync
         run: uv sync --locked
       - name: unit tests
