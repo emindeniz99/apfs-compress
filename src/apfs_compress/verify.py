@@ -212,10 +212,15 @@ def sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def _raise(e: OSError) -> None:
+    raise e
+
+
 def walk(root: str) -> dict[str, os.stat_result]:
-    """lstat of every entry under root, keyed by relative path."""
+    """lstat of every entry under root, keyed by relative path. A directory that cannot be read
+    raises (os.walk would skip it, and a tree with an unread subtree must not pass)."""
     out: dict[str, os.stat_result] = {}
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+    for dirpath, dirnames, filenames in os.walk(root, onerror=_raise, followlinks=False):
         for name in dirnames + filenames:
             p = os.path.join(dirpath, name)
             out[os.path.relpath(p, root)] = os.lstat(p)

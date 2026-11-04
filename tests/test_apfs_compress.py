@@ -141,6 +141,17 @@ class ApfsCompressTest(unittest.TestCase):
         ):
             self.assertIn(needle, text)
 
+    def test_unreadable_tree_fails_loud(self) -> None:
+        # os.walk would skip a directory it cannot read; a tree with an unread subtree must not
+        # pass, and a missing tree is exit 4, not "0 files".
+        self.assertEqual(run("status", str(self.src / "missing")).returncode, 4)
+        locked = self.src / "sub" / "locked"
+        locked.mkdir()
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o755)
+        with self.assertRaises(PermissionError):
+            verify.walk(str(self.src))
+
     def test_process_check_escapes_the_path(self) -> None:
         # pgrep -f takes a regular expression; "(1)" would match "1" and "[a]" would match "a".
         tree = Path(self.tmp.name) / "tree (1) [a]"

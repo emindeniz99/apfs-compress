@@ -35,7 +35,8 @@ Close every program that uses the tree first. `copy` and `swap` refuse when a pr
 | 0 | done |
 | 1 | the verification found a difference; the original is untouched |
 | 2 | a precondition failed; nothing was changed |
-| 3 | `ditto` failed |
+| 3 | `ditto` (or the `cp` that restores AppleDouble files) failed |
+| 4 | a file operation failed; the message names the file. Check the files beside SRC |
 
 ### Files beside SRC
 

@@ -345,6 +345,9 @@ def main(argv: list[str] | None = None) -> int:
     except subprocess.CalledProcessError as e:
         print(f"apfs-compress: {e}", file=sys.stderr)
         return 3
+    except OSError as e:
+        print(f"apfs-compress: {e}", file=sys.stderr)
+        return 4
 
 
 __version__ = "0.1.0"  # x-release-please-version
