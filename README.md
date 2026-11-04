@@ -11,7 +11,8 @@ It never compresses in place. Apple's own `ditto --noclone --hfsCompression` mak
 macOS on APFS, with Python 3.9 or later. The tool uses the standard library only. Development uses uv and Python from `mise.toml` and `.python-version`.
 
 ```bash
-uv tool install ./projects/apfs-compress     # puts apfs-compress in ~/.local/bin
+uv tool install git+https://github.com/emindeniz99/apfs-compress   # puts apfs-compress in ~/.local/bin
+# or from a clone: uv tool install .
 
 apfs-compress copy   /Volumes/T7Data/Unity/Editors/6000.3.27f2   # copy, verify, report; original untouched
 # test the copy: it is at .../Editors/.apfscmp-6000.3.27f2 (run the app from there)
@@ -232,4 +233,4 @@ Re-run this when APFS gains a new type.
 - Trees that change often: git checkouts, build caches such as Unity `Library` or Gradle, VM disks and databases. A write stores the file uncompressed again.
 - Already-compressed data: APKs, zips and media.
 
-The repo's [disk hygiene rule](../../.claude/rules/disk-hygiene.md) covers deleting regenerable caches. This tool is for what you keep.
+Regenerable caches (Gradle transforms, Unity `Library`, DerivedData) are better deleted than compressed. This tool is for what you keep.

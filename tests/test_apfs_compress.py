@@ -1,6 +1,6 @@
 """Tests on a small tree in a temporary directory (must be on APFS; macOS's TMPDIR is).
 
-uv run python -m unittest discover -s tests -v   (from projects/apfs-compress)
+uv run python -m unittest discover -s tests -v
 """
 
 from __future__ import annotations
