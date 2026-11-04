@@ -1,6 +1,6 @@
 [project]
 name = "apfs-compress"
-version = "0.1.0"
+dynamic = ["version"]
 description = "APFS transparent compression of read-mostly trees (Unity editors, SDKs) through a verified copy"
 readme = "README.md"
 authors = [{ name = "Emin Deniz", email = "emindeniz99@gmail.com" }]
@@ -11,8 +11,13 @@ dependencies = []
 apfs-compress = "apfs_compress:main"
 
 [build-system]
-requires = ["uv_build>=0.13.5,<0.14.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+# The version lives in one place, where release-please bumps it; a static version here would
+# go into uv.lock and break `uv sync --locked` on every bump.
+[tool.hatch.version]
+path = "src/apfs_compress/__init__.py"
 
 [tool.uv]
 # Stack supply-chain rule: resolve nothing published in the last 7 days.
