@@ -77,6 +77,19 @@ class ApfsCompressTest(unittest.TestCase):
         self.assertIn(os.path.join("sub", "empty-attr.a"), signable)
         self.assertEqual(data["codesign"]["different"], [])
 
+    def test_java_class_files_are_not_mach_o(self) -> None:
+        fat = b"\xca\xfe\xba\xbe\x00\x00\x00\x02"  # a universal binary with 2 architectures
+        self.assertTrue(codesign.is_macho(fat))
+        self.assertTrue(codesign.is_macho(b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01"))
+        self.assertFalse(codesign.is_macho(b"\xca\xfe\xba\xbe\x00\x00\x00\x41"))  # class version 65
+        self.assertFalse(codesign.is_macho(b"\xca\xfe\xba\xbe\x00\x03\x00\x2d"))  # class version 45.3
+        self.assertFalse(codesign.is_macho(b"\xca\xfe\xba\xbe"))  # too short to tell
+        self.assertFalse(codesign.is_macho(b"!<arch>\n"))
+        (self.src / "sub" / "A.class").write_bytes(b"\xca\xfe\xba\xbe\x00\x00\x00\x41" + b"\0" * 32)
+        _, signable = codesign.find(str(self.src))
+        self.assertNotIn(os.path.join("sub", "A.class"), signable)
+        self.assertIn(os.path.join("sub", "ls"), signable)
+
     def test_tree_that_is_an_app_bundle_is_deep_verified(self) -> None:
         app = Path(self.tmp.name) / "Tool.app"
         (app / "Contents" / "MacOS").mkdir(parents=True)

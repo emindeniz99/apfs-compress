@@ -19,7 +19,17 @@ from dataclasses import dataclass
 from .verify import has_xattr
 
 DEFAULT_THREADS = os.cpu_count() or 8
-MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
+FAT_MAGIC = b"\xca\xfe\xba\xbe"
+MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", FAT_MAGIC, b"\xbe\xba\xfe\xca"}
+
+
+def is_macho(header: bytes) -> bool:
+    """Whether the first 8 bytes of a file are a Mach-O or fat (universal) header. A Java class
+    file also starts with CA FE BA BE; its next four bytes are its version, 45 (JDK 1.1) or more,
+    where a fat binary has its architecture count."""
+    if header[:4] == FAT_MAGIC:
+        return len(header) >= 8 and int.from_bytes(header[4:8], "big") < 45
+    return header[:4] in MACHO_MAGIC
 
 
 def verify(path: str, deep: bool = False) -> tuple[bool, str]:
@@ -44,7 +54,7 @@ def find(root: str) -> tuple[list[str], list[str]]:
             if os.path.islink(p) or not os.path.isfile(p):
                 continue
             with open(p, "rb") as f:
-                macho = f.read(4) in MACHO_MAGIC
+                macho = is_macho(f.read(8))
             if macho or has_xattr(p, "com.apple.cs.CodeDirectory"):
                 machos.append(os.path.relpath(p, root))
     return apps, machos
