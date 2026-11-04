@@ -61,7 +61,7 @@ uv run python -m unittest discover -s tests -v
 - **Same tree:** the same relative paths and entry types.
 - **Same metadata:**
   - mode, owner, group and BSD flags, except the `compressed` flag;
-  - mtime of files and directories;
+  - mtime of files and symlinks, not of directories;
   - symlink targets;
   - extended attributes, by name and value;
   - extended ACLs.

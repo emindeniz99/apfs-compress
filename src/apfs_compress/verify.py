@@ -2,7 +2,7 @@
 
 Everything here is read-only. For every entry (symlinks are not followed) the two trees must
 have the same relative paths and types; the same mode, uid, gid and BSD flags except
-UF_COMPRESSED; the same mtime for files and directories; the same symlink targets; the same
+UF_COMPRESSED; the same mtime for every entry but a directory; the same symlink targets; the same
 size and SHA-256 for regular files; the same extended attributes (listxattr does not list the
 hidden compression attributes); and the same extended ACL. Two known differences are counted,
 not failed: ditto does not keep a symlink's own mtime, and macOS writes com.apple.provenance and
