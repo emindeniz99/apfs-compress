@@ -20,28 +20,28 @@ uv tool install git+https://github.com/emindeniz99/apfs-compress   # puts apfs-c
 Close every program that uses the tree first. `copy` and `swap` refuse when a process's command line names the tree; `--force` overrides that check.
 
 ```bash
-apfs-compress copy /Volumes/T7Data/Unity/Editors/6000.3.27f2
+apfs-compress copy /Volumes/External/Unity/Editors/6000.3.27f2
 ```
 
-`copy` makes the compressed copy at `/Volumes/T7Data/Unity/Editors/.apfscmp-6000.3.27f2`, checks it against the original and writes a report beside it. The original is untouched. A `PASS` line and exit code 0 mean every check passed; a `FAIL` leaves both trees for you to inspect.
+`copy` makes the compressed copy at `/Volumes/External/Unity/Editors/.apfscmp-6000.3.27f2`, checks it against the original and writes a report beside it. The original is untouched. A `PASS` line and exit code 0 mean every check passed; a `FAIL` leaves both trees for you to inspect.
 
 Test the copy: run the program from `.apfscmp-6000.3.27f2`. The copy sits beside the original at the same depth, so relative symlinks that point out of the tree keep resolving while you test it. Our Unity editors' `AndroidPlayer/SDK -> ../../../../Shared/...` is such a link.
 
 ```bash
-apfs-compress swap /Volumes/T7Data/Unity/Editors/6000.3.27f2
+apfs-compress swap /Volumes/External/Unity/Editors/6000.3.27f2
 ```
 
 `swap` puts the copy in the original's place and moves the original to `.apfscmp-orig-6000.3.27f2`. It refuses without a `PASS` report, and when either tree changed since `copy`. Test again from the real path.
 
 ```bash
-apfs-compress finish /Volumes/T7Data/Unity/Editors/6000.3.27f2 --yes
+apfs-compress finish /Volumes/External/Unity/Editors/6000.3.27f2 --yes
 ```
 
 `finish` deletes the moved-aside original, and only with `--yes`. Until then `rollback` puts the original back, and `discard` deletes a copy that was not swapped in:
 
 ```bash
-apfs-compress rollback /Volumes/T7Data/Unity/Editors/6000.3.27f2
-apfs-compress discard  /Volumes/T7Data/Unity/Editors/6000.3.27f2
+apfs-compress rollback /Volumes/External/Unity/Editors/6000.3.27f2
+apfs-compress discard  /Volumes/External/Unity/Editors/6000.3.27f2
 ```
 
 ## Commands
@@ -122,7 +122,7 @@ Known differences are reported but not failed:
 
 Hashing and code-signature checks use one thread per CPU core by default (`--threads` to limit). The report records each phase's time.
 
-## Notes / learnings (measured 2026-10-31, macOS 27.2, MacBook Pro M-series, Samsung T7 Shield over USB 10 Gb/s)
+## Notes / learnings (measured 2026-10-31, macOS 27.2, an Apple silicon Mac, an external USB SSD on a 10 Gb/s link)
 
 ### First real tree: Unity 6000.3.27f2 (Android and iOS modules)
 
@@ -136,9 +136,9 @@ Hashing and code-signature checks use one thread per CPU core by default (`--thr
 | Function | from the copy: the xLua editor suite 48/48, an Android IL2CPP APK, an iOS export |
 | Start time | batch open and quit of one project: 7.5 and 5.0 s original, 4.5 and 4.3 s compressed |
 
-### Rollout on the T7 (2026-10-31)
+### Rollout on the external SSD (2026-10-31)
 
-Each tree went through `copy`, `swap` and a functional check, then `finish` after the owner approved it. Free space on the T7 was 83 GiB with the originals kept beside the copies, and 182 GiB after `finish`.
+Each tree went through `copy`, `swap` and a functional check, then `finish` after the owner approved it. Free space on the external SSD was 83 GiB with the originals kept beside the copies, and 182 GiB after `finish`.
 
 | Tree | Allocated before → after | Saved | Functional check |
 |---|---|---|---|
@@ -202,7 +202,7 @@ Gatekeeper (`spctl`) rejects both the original and the copy of 6000.3.27f2 as "U
   
   The tools here can write only ZLIB, LZVN and LZFSE. LZMESH and LZRAVEN, both new in macOS 27, exist in libcompression and Apple Archive, not in APFS.
 - **`ditto` chooses the algorithm itself;** it has no flag for one. On macOS 27.2 it chose LZVN for every file. `DITTO_TEST_OPTIONS=1 ditto ...` prints its copier settings and exits: ACLs, extended attributes, quarantine, resource forks and restricted flags are all kept, and `useHFSPlusCompression` is on. There is no algorithm key.
-- **Same 4.8 GiB copy on the T7** (`research/`, 39,000 mostly small files):
+- **Same 4.8 GiB copy on the external SSD** (`research/`, 39,000 mostly small files):
 
   | Type | Size on disk | Read speed |
   |---|---|---|
@@ -211,7 +211,7 @@ Gatekeeper (`spctl`) rejects both the original and the copy of 6000.3.27f2 as "U
   | LZFSE | 74.9% | 269-274 MiB/s |
   | ZLIB | 80.4% | 231-290 MiB/s |
 
-  LZVN costs no read speed. The T7's USB link, not the decoder, is the limit.
+  LZVN costs no read speed. The USB link, not the decoder, is the limit.
 - **Other tools:**
   - **applesauce** (current, writes atomically) and **afsctool** (writes in place) write the same three types.
   - **fscmp** can write LZBITMAP through the private AppleFSCompression framework, but it is one 2022 commit against an unstable private interface.
@@ -252,7 +252,7 @@ Re-run this when APFS gains a new type.
   | | Large-file read | Large-file write | Unity's small files |
   |---|---|---|---|
   | Internal SSD | ~2,550 MB/s | ~2,200 MB/s | ~1,000 MB/s |
-  | T7 Shield | ~800 MB/s | ~820 MB/s | ~380 MB/s |
+  | External USB SSD | ~800 MB/s | ~820 MB/s | ~380 MB/s |
 
 - **Filesystems:** APFS (case-insensitive for Unity and Xcode) remains the right choice.
   - HFS+ has the same compression, but no clones or snapshots.
